@@ -24,9 +24,12 @@ of its own instead of a room inside Firefox.
 
 ## Status
 
-v0.0.1a — first run. One window, title "Nubisianua", 1200×850, dark
-background, loading `https://muse.ai`. Windows is the first build target;
-Linux follows as the second phase.
+v0.0.2a — window can now shrink to a quarter of the screen (minimum size
+lowered from 800×600 to 480×360). One window, title "Nubisianua",
+1200×850, dark background, loading `https://muse.ai`. Windows is the
+first build target; Linux follows as the second phase.
+
+v0.0.1a — first run.
 
 **Versioning:** the letter marks the phase, the numbers climb within it.
 The first phase runs 0.0.1a, 0.0.2a, and so forth until it reaches a stage

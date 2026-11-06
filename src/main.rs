@@ -20,7 +20,7 @@ fn main() {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
                 .title("Nubisianua")
                 .inner_size(1200.0, 850.0)
-                .min_inner_size(800.0, 600.0)
+                .min_inner_size(480.0, 360.0)
                 .resizable(true)
                 // Dark background so the window never flashes white while
                 // the page loads. RGBA matching the icon's deep-navy field.
