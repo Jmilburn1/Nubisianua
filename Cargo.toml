@@ -1,6 +1,6 @@
 [package]
 name = "nubisianua"
-version = "0.0.2-a"
+version = "0.0.3-a"
 description = "A lightweight doorway to your cloud AI — a small native window for Muse on Windows and Linux, no browser required."
 authors = ["John Milburn"]
 license = "MIT"
@@ -10,10 +10,18 @@ edition = "2021"
 # (tauri.conf.json, build.rs, capabilities/ and icons/ live beside Cargo.toml).
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+# Pinned exactly: the multi-webview APIs used for tabs live behind tauri's
+# `unstable` feature, and tauri-build must move in lockstep with tauri.
+# Bump only in dedicated, tested steps (see SPEC-0.0.3a-tabs.md §3).
+tauri-build = { version = "=2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "=2.12.5", features = ["unstable"] }
+# tabs.json load/save (src/config.rs). The spec expected "no new crates";
+# hand-rolling JSON for user-editable tab labels would be the fragile
+# option, so serde is the one deliberate addition.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [profile.release]
 lto = true
