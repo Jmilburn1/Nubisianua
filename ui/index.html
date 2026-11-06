@@ -14,6 +14,9 @@
   everywhere outside the shelf, so a menu floated over the content area
   opens underneath the active webview — clickable buttons, invisible
   menu. Inside the shelf, this page is always on top.
+  Tabs close at any shelf width (v0.0.7a): the expanded × button, a
+  hover × badge over the icon in logo-only mode, middle-click, or the
+  entry's right-click menu — all through the one close flow.
   Agent logos live in ui/logos/<preset-id>.png, bundled locally.
   This page talks to Rust through the Tauri global API (withGlobalTauri)
   using only the app's own commands — child webviews get no such access.
@@ -81,6 +84,20 @@
   }
   .entry:hover .close, .entry.active .close { visibility: visible; }
   .entry .close:hover { background: #3a2430; color: #ff9db0; }
+
+  /* Icon-width close badge (v0.0.7a): the .close button above is display:none
+     in compact mode, so a small × overlays the entry's top-right corner on
+     hover instead — closing a tab must not cost an expand first. Compact
+     only; expanded mode keeps using .close. */
+  .entry .badge {
+    position: absolute; top: 1px; right: 1px; z-index: 2;
+    width: 15px; height: 15px; padding: 0;
+    border: none; border-radius: 50%; background: #3a2430;
+    color: #ff9db0; font-size: 11px; line-height: 1; cursor: pointer;
+    visibility: hidden;
+  }
+  body.compact .entry:hover .badge { visibility: visible; }
+  .entry .badge:hover { background: #57303f; }
   .entry input.rename {
     flex: 1; min-width: 0; background: var(--bg); color: var(--text);
     border: 1px solid var(--gold); border-radius: 3px; font: inherit; padding: 1px 4px;
@@ -187,6 +204,14 @@
     return div;
   }
 
+  // The one close flow every close affordance funnels into (the expanded
+  // × button, the compact hover badge, middle-click, the right-click
+  // menu, Ctrl+W): Rust handles neighbor activation and last-tab-closes-
+  // the-app, exactly as before (v0.0.7a).
+  async function closeTab(id) {
+    try { await invoke('close_tab', { id }); } catch (err) { console.error(err); }
+  }
+
   function displayedWidth() {
     return menuSavedWidth !== null ? MENU_WIDTH : userWidth;
   }
@@ -231,11 +256,40 @@
       close.className = 'close';
       close.textContent = '×';
       close.title = 'Close tab';
-      close.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        try { await invoke('close_tab', { id: tab.id }); } catch (err) { console.error(err); }
-      });
+      close.addEventListener('click', (e) => { e.stopPropagation(); closeTab(tab.id); });
       el.appendChild(close);
+
+      // Icon-width close badge (v0.0.7a): visible only in compact mode,
+      // on hover (see the .badge CSS). Clicking it closes this tab
+      // without selecting it first; the dblclick guard keeps a quick
+      // second click from falling through to the compact-mode rename.
+      const badge = document.createElement('button');
+      badge.className = 'badge';
+      badge.textContent = '×';
+      badge.title = 'Close tab';
+      badge.addEventListener('click', (e) => { e.stopPropagation(); closeTab(tab.id); });
+      badge.addEventListener('dblclick', (e) => { e.stopPropagation(); });
+      el.appendChild(badge);
+
+      // Middle-click closes the tab (v0.0.7a; auxclick button 1). The
+      // mousedown guard keeps a wheel-press in the scrollable entries
+      // column from starting the browser's autoscroll instead. Both
+      // leave left-click selectivity and double-click rename untouched:
+      // click/dblclick only ever fire for the primary button.
+      el.addEventListener('auxclick', (e) => {
+        if (e.button === 1) { e.preventDefault(); closeTab(tab.id); }
+      });
+      el.addEventListener('mousedown', (e) => {
+        if (e.button === 1) e.preventDefault();
+      });
+      // Right-click opens this tab's own menu — through the same
+      // in-shelf menu machinery as the picker and gear menus (v0.0.7a;
+      // the 0.0.6a rule: never float a menu over the content area).
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleMenu(tabMenu(tab));
+      });
 
       el.addEventListener('click', async () => {
         if (tab.id !== state.activeTab) {
@@ -273,6 +327,11 @@
     input.addEventListener('blur', () => commit(true));
     input.addEventListener('click', (e) => e.stopPropagation());
     input.addEventListener('dblclick', (e) => e.stopPropagation());
+    // Keep the entry's v0.0.7a handlers out of the rename box: a middle
+    // or right click here is text editing, never a tab close or menu.
+    input.addEventListener('auxclick', (e) => e.stopPropagation());
+    input.addEventListener('contextmenu', (e) => e.stopPropagation());
+    input.addEventListener('mousedown', (e) => { if (e.button === 1) e.stopPropagation(); });
   }
 
   /* ---- popup menus ----
@@ -386,6 +445,25 @@
     };
   }
 
+  // A tab's own right-click menu (v0.0.7a). Built through the same
+  // toggleMenu plumbing as the picker and settings menus, so it gets
+  // everything they get for free: rendered inside the shelf (never over
+  // the content area), the temporary widen in logo-only mode with the
+  // user's width restored on close, click-outside / Escape to dismiss,
+  // and one menu at a time. The kind is per-tab, so right-clicking the
+  // same tab again toggles it shut and a different tab swaps the menu.
+  function tabMenu(tab) {
+    return {
+      kind: 'tab:' + tab.id,
+      fill(m) {
+        const b = document.createElement('button');
+        b.textContent = 'Close tab';
+        b.addEventListener('click', () => { closeMenu(); closeTab(tab.id); });
+        m.appendChild(b);
+      },
+    };
+  }
+
   document.getElementById('add').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(pickerMenu()); });
   document.getElementById('gear').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(settingsMenu()); });
   document.addEventListener('click', () => closeMenu());
@@ -431,7 +509,7 @@
     if (e.key === 't' || e.key === 'T') { e.preventDefault(); toggleMenu(pickerMenu()); }
     else if (e.key === 'w' || e.key === 'W') {
       e.preventDefault();
-      if (state.activeTab) { try { await invoke('close_tab', { id: state.activeTab }); } catch (err) { console.error(err); } }
+      if (state.activeTab) closeTab(state.activeTab);
     } else if (e.key === 'Tab') {
       e.preventDefault();
       try { await invoke('cycle_tab', { delta: e.shiftKey ? -1 : 1 }); } catch (err) { console.error(err); }

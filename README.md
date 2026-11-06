@@ -29,6 +29,13 @@ agents are guests you invite in.
 
 ## Status
 
+v0.0.7a — **closing tabs at icon width.** With the shelf folded to
+logos only, a tab can now be closed without expanding the shelf first:
+hover an icon for a small × badge, middle-click the entry, or
+right-click it for a Close tab menu (rendered inside the shelf, like
+every menu since 0.0.6a). All of them run through the same close flow
+as the expanded × button, which is unchanged.
+
 v0.0.6a — **menu fix + Muse-matched palette.** The + picker and ⚙ settings
 menus now open as a panel inside the shelf itself — they used to float
 over the content area, where the active agent webview (a native layer
