@@ -29,6 +29,16 @@ agents are guests you invite in.
 
 ## Status
 
+v0.0.6a — **menu fix + Muse-matched palette.** The + picker and ⚙ settings
+menus now open as a panel inside the shelf itself — they used to float
+over the content area, where the active agent webview (a native layer
+painted above the shelf's page) rendered over them: the buttons took
+clicks, the menu opened invisibly, and nothing seemed to happen. In
+logo-only mode the shelf temporarily widens while a menu is open and
+restores to your width when it closes. The shelf colors are also
+re-based on the Muse window background (#181819), so the shelf blends
+into the resident's window instead of sitting beside it in navy.
+
 v0.0.5a — **the vertical shelf.** Tabs move to a resizable shelf docked to
 the left or right window edge — **right by default** — chosen from the
 shelf's ⚙ settings menu (the Firefox Settings pattern), never by dragging.

@@ -9,6 +9,11 @@
   edge: wide shows logo + name, narrow (below 120px) shows logos only.
   The dock side is chosen from the gear (settings) menu at the shelf's
   foot, mirroring Firefox's Settings pattern — never by dragging.
+  Popup menus render as a panel INSIDE the shelf's own rectangle
+  (v0.0.6a): child webviews are native layers painted above this page
+  everywhere outside the shelf, so a menu floated over the content area
+  opens underneath the active webview — clickable buttons, invisible
+  menu. Inside the shelf, this page is always on top.
   Agent logos live in ui/logos/<preset-id>.png, bundled locally.
   This page talks to Rust through the Tauri global API (withGlobalTauri)
   using only the app's own commands — child webviews get no such access.
@@ -19,13 +24,13 @@
 <title>Nubisianua</title>
 <style>
   :root {
-    --bg: #0b0e14;          /* matches the host window background (11,14,20) */
-    --shelf: #10151f;
-    --tab: #141a24;
-    --tab-active: #1f2938;
-    --line: #2a3342;
-    --text: #d7dde6;
-    --dim: #8b96a5;
+    --bg: #181819;          /* Muse window background, sampled from muse.ai (24,24,25) */
+    --shelf: #181819;
+    --tab: #222223;
+    --tab-active: #2a2a2b;
+    --line: #333334;
+    --text: #e6e6e6;
+    --dim: #9a9a9e;
     --gold: #d4a94e;        /* doorway gold, from the app icon */
   }
   * { box-sizing: border-box; }
@@ -108,11 +113,14 @@
   body[data-side="right"] #handle { left: -4px; }
   #handle:hover, #handle.dragging { background: rgba(212,169,78,.35); }
 
-  /* ---- popup menus (agent picker / shelf settings) ---- */
+  /* ---- popup menus (agent picker / shelf settings) ----
+     Positioned absolute within #shelf (its positioned ancestor), inset
+     6px from the shelf's side edges and anchored just above the foot.
+     Never over the content area — see the header comment (v0.0.6a). */
   #menu {
-    position: fixed; bottom: 52px; z-index: 10; width: 320px; max-width: 92vw;
-    max-height: 70vh; overflow-y: auto;
-    background: #12161f; border: 1px solid var(--line); border-radius: 8px;
+    position: absolute; left: 6px; right: 6px; bottom: 48px; z-index: 10;
+    max-height: calc(100vh - 120px); overflow-y: auto;
+    background: #212122; border: 1px solid var(--line); border-radius: 8px;
     padding: 5px; box-shadow: 0 10px 28px rgba(0,0,0,.55);
   }
   #menu[hidden] { display: none; }
@@ -137,8 +145,8 @@
       <button id="gear" title="Shelf settings">⚙</button>
     </div>
     <div id="handle" title="Drag to resize the shelf"></div>
+    <div id="menu" hidden></div>
   </div>
-  <div id="menu" hidden></div>
 
 <script>
   const invoke = window.__TAURI__.core.invoke;
@@ -149,6 +157,11 @@
   let presets = [];
   let presetByUrl = new Map(), presetByName = new Map();
   let state = { tabs: [], activeTab: null, shelfWidth: 208, dockSide: 'right' };
+  // The user's own shelf width. While a popup menu temporarily widens a
+  // narrow shelf (see widenForMenu below), Rust-side snapshots report the
+  // temporary width — userWidth is what must survive that, so it is only
+  // adopted from snapshots while no menu expansion is in flight.
+  let userWidth = 208;
   let dragging = false;
 
   const shelf = document.getElementById('shelf');
@@ -174,10 +187,15 @@
     return div;
   }
 
+  function displayedWidth() {
+    return menuSavedWidth !== null ? MENU_WIDTH : userWidth;
+  }
+
   function applyShelf() {
+    const w = displayedWidth();
     document.body.dataset.side = state.dockSide;
-    shelf.style.width = state.shelfWidth + 'px';
-    document.body.classList.toggle('compact', state.shelfWidth < NAME_THRESHOLD);
+    shelf.style.width = w + 'px';
+    document.body.classList.toggle('compact', w < NAME_THRESHOLD);
   }
 
   function render() {
@@ -257,21 +275,43 @@
     input.addEventListener('dblclick', (e) => e.stopPropagation());
   }
 
-  /* ---- popup menus ---- */
+  /* ---- popup menus ----
+     The panel itself is positioned by CSS, inside the shelf (see the
+     #menu rule). In logo-only mode the shelf is too narrow to read a
+     menu in, so opening one temporarily widens the shelf to MENU_WIDTH
+     through the same non-persisted set_shelf_width path the drag
+     handle uses, and closing restores the user's width the same way.
+     The persisted width is never written by this — Rust only ever
+     saves on persist: true. */
+  const MENU_WIDTH = 208;
+  let menuSavedWidth = null; // user's width, held while a menu keeps the shelf wide
 
-  function placeMenu() {
-    // Open beside the shelf foot, into the content area.
-    if (state.dockSide === 'right') { menu.style.right = (state.shelfWidth + 8) + 'px'; menu.style.left = 'auto'; }
-    else { menu.style.left = (state.shelfWidth + 8) + 'px'; menu.style.right = 'auto'; }
+  function widenForMenu() {
+    if (menuSavedWidth !== null || userWidth >= NAME_THRESHOLD) return;
+    menuSavedWidth = userWidth;
+    applyShelf();
+    invoke('set_shelf_width', { width: MENU_WIDTH, persist: false }).catch((err) => console.error(err));
   }
 
-  function closeMenu() { menu.hidden = true; }
+  function restoreAfterMenu() {
+    if (menuSavedWidth === null) return;
+    menuSavedWidth = null;
+    applyShelf();
+    invoke('set_shelf_width', { width: userWidth, persist: false }).catch((err) => console.error(err));
+  }
+
+  function closeMenu() {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    restoreAfterMenu();
+  }
+
   function toggleMenu(build) {
     if (!menu.hidden && menu.dataset.kind === build.kind) { closeMenu(); return; }
+    widenForMenu();
     menu.dataset.kind = build.kind;
     menu.textContent = '';
     build.fill(menu);
-    placeMenu();
     menu.hidden = false;
   }
 
@@ -357,12 +397,13 @@
   let lastPreview = 0;
   handle.addEventListener('mousedown', (e) => {
     e.preventDefault();
+    closeMenu(); // a drag takes the shelf back from any open menu first
     dragging = true;
     handle.classList.add('dragging');
     const onMove = (ev) => {
       const raw = state.dockSide === 'left' ? ev.clientX : window.innerWidth - ev.clientX;
       const w = Math.min(SHELF_MAX, Math.max(SHELF_MIN, raw));
-      state.shelfWidth = w;
+      userWidth = w;
       applyShelf();
       const now = performance.now();
       if (now - lastPreview > 40) {
@@ -375,7 +416,7 @@
       handle.classList.remove('dragging');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      invoke('set_shelf_width', { width: state.shelfWidth, persist: true }).catch((err) => console.error(err));
+      invoke('set_shelf_width', { width: userWidth, persist: true }).catch((err) => console.error(err));
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -385,6 +426,7 @@
   // typed into an agent page belong to that page, and no webview lets a
   // wrapper steal them — see the 0.0.3a build notes.
   document.addEventListener('keydown', async (e) => {
+    if (e.key === 'Escape' && !menu.hidden) { closeMenu(); return; }
     if (!e.ctrlKey) return;
     if (e.key === 't' || e.key === 'T') { e.preventDefault(); toggleMenu(pickerMenu()); }
     else if (e.key === 'w' || e.key === 'W') {
@@ -402,9 +444,13 @@
       presetByUrl = new Map(presets.map((p) => [normUrl(p.url), p]));
       presetByName = new Map(presets.map((p) => [p.name, p]));
       state = await invoke('get_state');
+      userWidth = state.shelfWidth;
       render();
       await listen('tabs-changed', (event) => {
         state = event.payload;
+        // While a menu holds the shelf wide, the payload's width is the
+        // temporary one — don't adopt it as the user's width.
+        if (menuSavedWidth === null) userWidth = state.shelfWidth;
         if (!dragging) render();
       });
     } catch (err) {

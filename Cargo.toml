@@ -1,6 +1,6 @@
 [package]
 name = "nubisianua"
-version = "0.0.5-a"
+version = "0.0.6-a"
 description = "A lightweight doorway to your cloud AI — a small native window for Muse on Windows and Linux, no browser required."
 authors = ["John Milburn"]
 license = "MIT"
