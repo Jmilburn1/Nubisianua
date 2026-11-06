@@ -20,12 +20,62 @@ pub struct TabEntry {
     pub url: String,
 }
 
+/// Which window edge the tab shelf docks to (v0.0.5a). John's preference
+/// is the right edge — vertical tabs that start on the left are what he
+/// does NOT like — so `Right` is the default. The side is chosen from a
+/// settings-style menu on the shelf (mirroring Firefox's Settings toggle),
+/// never by dragging the shelf itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DockSide {
+    Left,
+    Right,
+}
+
+impl Default for DockSide {
+    fn default() -> Self {
+        DockSide::Right
+    }
+}
+
+impl DockSide {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DockSide::Left => "left",
+            DockSide::Right => "right",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "left" => Some(DockSide::Left),
+            "right" => Some(DockSide::Right),
+            _ => None,
+        }
+    }
+}
+
+/// Shelf width on first run with the shelf feature: fully expanded
+/// (logo + name). Bounds live in `tabs.rs` and are enforced on load too.
+pub const DEFAULT_SHELF_WIDTH: f64 = 208.0;
+
+fn default_shelf_width() -> f64 {
+    DEFAULT_SHELF_WIDTH
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TabConfig {
     pub version: u32,
     #[serde(rename = "activeTab")]
     pub active_tab: Option<String>,
     pub tabs: Vec<TabEntry>,
+    /// Shelf width in logical px (v0.0.5a). `serde(default)` keeps configs
+    /// written by 0.0.3a/0.0.4a — which have no such field — loading fine.
+    #[serde(rename = "shelfWidth", default = "default_shelf_width")]
+    pub shelf_width: f64,
+    /// Shelf dock side (v0.0.5a); defaults to `DockSide::Right`.
+    #[serde(rename = "dockSide", default)]
+    pub dock_side: DockSide,
 }
 
 impl Default for TabConfig {
@@ -39,6 +89,8 @@ impl Default for TabConfig {
                 name: DEFAULT_TAB_NAME.to_string(),
                 url: DEFAULT_TAB_URL.to_string(),
             }],
+            shelf_width: DEFAULT_SHELF_WIDTH,
+            dock_side: DockSide::default(),
         }
     }
 }
@@ -88,12 +140,17 @@ pub fn load(app: &AppHandle) -> TabConfig {
     } else {
         cfg.active_tab = Some(cfg.tabs[0].id.clone());
     }
+    // Enforce the shelf width bounds on the way in, whatever wrote the file.
+    cfg.shelf_width = cfg
+        .shelf_width
+        .clamp(crate::tabs::SHELF_MIN_WIDTH, crate::tabs::SHELF_MAX_WIDTH);
     cfg
 }
 
-/// Persist the tab list. Written on every tab change (add / close / rename /
-/// activate). Errors are swallowed on purpose: a failed save must never take
-/// the window down with it; the in-memory state is still correct.
+/// Persist the tab list. Written on every change (tab add / close / rename /
+/// activate, shelf width on drag release, dock side). Errors are swallowed
+/// on purpose: a failed save must never take the window down with it; the
+/// in-memory state is still correct.
 pub fn save(app: &AppHandle, cfg: &TabConfig) {
     let Ok(path) = config_path(app) else {
         return;
@@ -113,3 +170,4 @@ pub fn profile_dir(app: &AppHandle, tab_id: &str) -> tauri::Result<PathBuf> {
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
+

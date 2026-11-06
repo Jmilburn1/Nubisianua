@@ -16,37 +16,43 @@ use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewUrl, Window,
 };
 
-use crate::config::{self, TabConfig, TabEntry};
+use crate::config::{self, DockSide, TabConfig, TabEntry};
 
-/// Height of the tab strip (logical px). The frontend strip is exactly this
-/// tall (ui/index.html); tab webviews fill everything below it.
-pub const STRIP_HEIGHT: f64 = 40.0;
+/// Shelf width bounds (logical px). At `SHELF_MIN_WIDTH` the shelf is a
+/// slim rail of centered logos; at `SHELF_MAX_WIDTH` every entry shows
+/// logo + full name. The frontend hides names below its own threshold
+/// (120px) — these bounds only govern what Rust accepts and persists.
+pub const SHELF_MIN_WIDTH: f64 = 52.0;
+pub const SHELF_MAX_WIDTH: f64 = 248.0;
 
 const HOST_LABEL: &str = "main";
 
-/// Preset agents for the + picker (spec §2). Pure data: name + start URL,
-/// no per-provider code. All URLs verified 2026-11-06; see the spec's §2
-/// field notes (Le Chat now brands itself Mistral Vibe, Qwen Chat brands
-/// itself Qwen Studio, Doubao is China-first with restricted sign-in,
-/// Copilot redirects work accounts to Microsoft 365 Copilot Chat).
-pub const PRESETS: &[(&str, &str)] = &[
-    ("Muse", "https://muse.ai"),
-    ("ChatGPT", "https://chatgpt.com"),
-    ("Claude", "https://claude.ai"),
-    ("Gemini", "https://gemini.google.com"),
-    ("Microsoft Copilot", "https://copilot.microsoft.com"),
-    ("Grok", "https://grok.com"),
-    ("Perplexity", "https://www.perplexity.ai"),
-    ("Meta AI", "https://www.meta.ai"),
-    ("DeepSeek", "https://chat.deepseek.com"),
-    ("Qwen", "https://chat.qwen.ai"),
-    ("Kimi", "https://www.kimi.com"),
-    ("Le Chat (Mistral)", "https://chat.mistral.ai"),
-    ("Doubao", "https://www.doubao.com"),
+/// Preset agents for the + picker (spec §2). Pure data: id + name + start
+/// URL, no per-provider code. The id names the bundled logo file
+/// (`ui/logos/<id>.png`, v0.0.5a) and is how the shelf matches a tab to a
+/// logo. All URLs verified 2026-11-06; see the spec's §2 field notes
+/// (Le Chat now brands itself Mistral Vibe, Qwen Chat brands itself Qwen
+/// Studio, Doubao is China-first with restricted sign-in, Copilot
+/// redirects work accounts to Microsoft 365 Copilot Chat).
+pub const PRESETS: &[(&str, &str, &str)] = &[
+    ("muse", "Muse", "https://muse.ai"),
+    ("chatgpt", "ChatGPT", "https://chatgpt.com"),
+    ("claude", "Claude", "https://claude.ai"),
+    ("gemini", "Gemini", "https://gemini.google.com"),
+    ("copilot", "Microsoft Copilot", "https://copilot.microsoft.com"),
+    ("grok", "Grok", "https://grok.com"),
+    ("perplexity", "Perplexity", "https://www.perplexity.ai"),
+    ("meta", "Meta AI", "https://www.meta.ai"),
+    ("deepseek", "DeepSeek", "https://chat.deepseek.com"),
+    ("qwen", "Qwen", "https://chat.qwen.ai"),
+    ("kimi", "Kimi", "https://www.kimi.com"),
+    ("lechat", "Le Chat (Mistral)", "https://chat.mistral.ai"),
+    ("doubao", "Doubao", "https://www.doubao.com"),
 ];
 
 #[derive(Clone, Serialize)]
 pub struct Preset {
+    pub id: String,
     pub name: String,
     pub url: String,
 }
@@ -58,6 +64,10 @@ pub struct TabSnapshot {
     pub tabs: Vec<TabEntry>,
     #[serde(rename = "activeTab")]
     pub active_tab: Option<String>,
+    #[serde(rename = "shelfWidth")]
+    pub shelf_width: f64,
+    #[serde(rename = "dockSide")]
+    pub dock_side: String,
 }
 
 struct Inner {
@@ -88,6 +98,8 @@ fn snapshot(inner: &Inner) -> TabSnapshot {
     TabSnapshot {
         tabs: inner.config.tabs.clone(),
         active_tab: inner.config.active_tab.clone(),
+        shelf_width: inner.config.shelf_width,
+        dock_side: inner.config.dock_side.as_str().to_string(),
     }
 }
 
@@ -100,16 +112,25 @@ fn host_window(app: &AppHandle) -> Result<Window, String> {
         .ok_or_else(|| "host window missing".to_string())
 }
 
-/// Bounds for the active tab's webview: full width, everything below the
-/// tab strip, in logical units.
-fn content_bounds(window: &Window) -> (LogicalPosition<f64>, LogicalSize<f64>) {
+/// Bounds for a tab's webview: the whole window minus the shelf, in
+/// logical units. Docked left, the content starts at x = shelf width;
+/// docked right, it starts at x = 0 and the shelf takes the right edge.
+fn content_bounds(
+    window: &Window,
+    side: DockSide,
+    shelf_width: f64,
+) -> (LogicalPosition<f64>, LogicalSize<f64>) {
     let scale = window.scale_factor().unwrap_or(1.0);
     let physical = window.inner_size().unwrap_or_default();
-    let width = physical.width as f64 / scale;
-    let height = (physical.height as f64 / scale - STRIP_HEIGHT).max(50.0);
+    let win_w = physical.width as f64 / scale;
+    let win_h = physical.height as f64 / scale;
+    let x = match side {
+        DockSide::Left => shelf_width,
+        DockSide::Right => 0.0,
+    };
     (
-        LogicalPosition::new(0.0, STRIP_HEIGHT),
-        LogicalSize::new(width.max(50.0), height),
+        LogicalPosition::new(x, 0.0),
+        LogicalSize::new((win_w - shelf_width).max(50.0), win_h.max(50.0)),
     )
 }
 
@@ -132,7 +153,7 @@ fn apply_visibility(app: &AppHandle, inner: &Inner) {
     let Ok(window) = host_window(app) else {
         return;
     };
-    let (pos, size) = content_bounds(&window);
+    let (pos, size) = content_bounds(&window, inner.config.dock_side, inner.config.shelf_width);
     for (id, webview) in &inner.webviews {
         if Some(id) == inner.config.active_tab.as_ref() {
             let _ = webview.set_position(pos);
@@ -147,14 +168,20 @@ fn apply_visibility(app: &AppHandle, inner: &Inner) {
 
 /// The one and only child-webview creation path. Callers must be async
 /// (see the module docs — Windows deadlock rule).
-fn create_webview(app: &AppHandle, entry: &TabEntry, active: bool) -> Result<Webview, String> {
+fn create_webview(
+    app: &AppHandle,
+    entry: &TabEntry,
+    active: bool,
+    side: DockSide,
+    shelf_width: f64,
+) -> Result<Webview, String> {
     let window = host_window(app)?;
     let url: tauri::Url = entry
         .url
         .parse()
         .map_err(|e| format!("bad tab URL {:?}: {e}", entry.url))?;
     let profile = config::profile_dir(app, &entry.id).map_err(|e| e.to_string())?;
-    let (pos, size) = content_bounds(&window);
+    let (pos, size) = content_bounds(&window, side, shelf_width);
     let builder = tauri::webview::WebviewBuilder::new(
         webview_label(&entry.id),
         WebviewUrl::External(url),
@@ -174,18 +201,22 @@ fn create_webview(app: &AppHandle, entry: &TabEntry, active: bool) -> Result<Web
 /// Create webviews for every tab in the loaded config. Runs from the async
 /// task spawned in setup — not from setup itself (deadlock rule).
 pub async fn restore(app: &AppHandle, state: &State<'_, TabManager>) {
-    let entries: Vec<(TabEntry, bool)> = {
+    let (entries, side, shelf_width) = {
         let inner = state.inner.lock().unwrap();
         let active = inner.config.active_tab.clone();
-        inner
-            .config
-            .tabs
-            .iter()
-            .map(|t| (t.clone(), Some(&t.id) == active.as_ref()))
-            .collect()
+        (
+            inner
+                .config
+                .tabs
+                .iter()
+                .map(|t| (t.clone(), Some(&t.id) == active.as_ref()))
+                .collect::<Vec<(TabEntry, bool)>>(),
+            inner.config.dock_side,
+            inner.config.shelf_width,
+        )
     };
     for (entry, is_active) in entries {
-        match create_webview(app, &entry, is_active) {
+        match create_webview(app, &entry, is_active, side, shelf_width) {
             Ok(webview) => {
                 let mut inner = state.inner.lock().unwrap();
                 inner.webviews.insert(entry.id.clone(), webview);
@@ -196,7 +227,7 @@ pub async fn restore(app: &AppHandle, state: &State<'_, TabManager>) {
     let inner = state.inner.lock().unwrap();
     apply_visibility(app, &inner);
     emit_snapshot(app, &inner);
-    // If every webview failed to create, the strip still shows the tab list
+    // If every webview failed to create, the shelf still shows the tab list
     // and the + button works — the app never opens windowless (spec §7.6).
 }
 
@@ -224,7 +255,8 @@ pub async fn get_state(state: State<'_, TabManager>) -> Result<TabSnapshot, Stri
 pub async fn get_presets() -> Result<Vec<Preset>, String> {
     Ok(PRESETS
         .iter()
-        .map(|(name, url)| Preset {
+        .map(|(id, name, url)| Preset {
+            id: id.to_string(),
             name: name.to_string(),
             url: url.to_string(),
         })
@@ -279,17 +311,21 @@ pub async fn create_tab(
     } else {
         name.trim().to_string()
     };
-    let entry = {
+    let (entry, side, shelf_width) = {
         let inner = state.inner.lock().unwrap();
-        TabEntry {
-            id: inner.config.next_id(),
-            name,
-            url,
-        }
+        (
+            TabEntry {
+                id: inner.config.next_id(),
+                name,
+                url,
+            },
+            inner.config.dock_side,
+            inner.config.shelf_width,
+        )
     };
     // Create BEFORE mutating state, with no lock held: if creation fails,
     // the config was never touched.
-    let webview = create_webview(&app, &entry, true)?;
+    let webview = create_webview(&app, &entry, true, side, shelf_width)?;
     let mut inner = state.inner.lock().unwrap();
     inner.webviews.insert(entry.id.clone(), webview);
     inner.config.tabs.push(entry.clone());
@@ -414,6 +450,51 @@ pub async fn cycle_tab(
         .unwrap_or(0);
     let next = (current as i32 + delta).rem_euclid(len as i32) as usize;
     inner.config.active_tab = Some(inner.config.tabs[next].id.clone());
+    config::save(&app, &inner.config);
+    apply_visibility(&app, &inner);
+    emit_snapshot(&app, &inner);
+    Ok(snapshot(&inner))
+}
+
+/// Set the shelf width (v0.0.5a). Driven by the drag handle on the shelf's
+/// inner edge: during the drag the frontend calls this with
+/// `persist = false` on every settled frame, so the content webview
+/// re-fits live; on release it calls once with `persist = true` to save
+/// and broadcast. Resizes/repositions existing webviews only — safe from
+/// any handler (Windows deadlock rule covers creation, not layout).
+#[tauri::command]
+pub async fn set_shelf_width(
+    app: AppHandle,
+    state: State<'_, TabManager>,
+    width: f64,
+    persist: bool,
+) -> Result<TabSnapshot, String> {
+    let mut inner = state.inner.lock().unwrap();
+    inner.config.shelf_width = width.clamp(SHELF_MIN_WIDTH, SHELF_MAX_WIDTH);
+    if persist {
+        config::save(&app, &inner.config);
+    }
+    apply_visibility(&app, &inner);
+    if persist {
+        emit_snapshot(&app, &inner);
+    }
+    Ok(snapshot(&inner))
+}
+
+/// Set which window edge the shelf docks to (v0.0.5a). Chosen from the
+/// shelf's settings (gear) menu — "Shelf side: Left / Right" — mirroring
+/// the Firefox Settings pattern John asked for; never by dragging the
+/// shelf. Persisted immediately; the content webview re-fits to the
+/// remaining area (x = 0 when docked right, x = shelf width when left).
+#[tauri::command]
+pub async fn set_dock_side(
+    app: AppHandle,
+    state: State<'_, TabManager>,
+    side: String,
+) -> Result<TabSnapshot, String> {
+    let side = DockSide::parse(&side).ok_or_else(|| format!("unknown dock side {side:?}"))?;
+    let mut inner = state.inner.lock().unwrap();
+    inner.config.dock_side = side;
     config::save(&app, &inner.config);
     apply_visibility(&app, &inner);
     emit_snapshot(&app, &inner);

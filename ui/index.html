@@ -1,11 +1,17 @@
 <!doctype html>
 <!--
-  Nubisianua tab strip — the project's entire frontend.
+  Nubisianua tab shelf — the project's entire frontend.
   Plain HTML/CSS/JS, no framework, no build step (SPEC-0.0.3a-tabs.md §5).
-  This page is the host window's own webview; the agents live in child
-  webviews that Rust (src/tabs.rs) positions below this 40px strip.
-  It talks to Rust through the Tauri global API (withGlobalTauri) using
-  only the app's own commands — child webviews get no such access.
+  This page is the host window's own webview; Rust (src/tabs.rs) positions
+  each agent's child webview in the area beside the shelf.
+  The shelf is a vertical rail docked to the LEFT or RIGHT window edge
+  (default: right — John's preference), resizable by dragging its inner
+  edge: wide shows logo + name, narrow (below 120px) shows logos only.
+  The dock side is chosen from the gear (settings) menu at the shelf's
+  foot, mirroring Firefox's Settings pattern — never by dragging.
+  Agent logos live in ui/logos/<preset-id>.png, bundled locally.
+  This page talks to Rust through the Tauri global API (withGlobalTauri)
+  using only the app's own commands — child webviews get no such access.
 -->
 <html lang="en">
 <head>
@@ -14,6 +20,7 @@
 <style>
   :root {
     --bg: #0b0e14;          /* matches the host window background (11,14,20) */
+    --shelf: #10151f;
     --tab: #141a24;
     --tab-active: #1f2938;
     --line: #2a3342;
@@ -23,78 +30,184 @@
   }
   * { box-sizing: border-box; }
   html, body {
-    margin: 0; padding: 0; height: 40px; overflow: hidden;
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
     background: var(--bg); color: var(--text);
     font: 12.5px/1.4 system-ui, "Segoe UI", sans-serif;
     user-select: none; -webkit-user-select: none;
   }
-  #strip { display: flex; align-items: stretch; height: 40px; padding: 5px 6px 0 6px; gap: 4px; }
-  .tab {
-    display: flex; align-items: center; gap: 7px;
-    max-width: 190px; padding: 0 6px 0 11px;
-    background: var(--tab); border: 1px solid transparent; border-bottom: none;
-    border-radius: 7px 7px 0 0; cursor: pointer; white-space: nowrap;
+
+  /* ---- the shelf ---- */
+  #shelf {
+    position: fixed; top: 0; bottom: 0; z-index: 5;
+    display: flex; flex-direction: column;
+    background: var(--shelf);
   }
-  .tab.active { background: var(--tab-active); border-color: var(--line); box-shadow: inset 0 -2px 0 var(--gold); }
-  .tab .label { overflow: hidden; text-overflow: ellipsis; }
-  .tab .close {
+  body[data-side="right"] #shelf { right: 0; border-left: 1px solid var(--line); }
+  body[data-side="left"]  #shelf { left: 0;  border-right: 1px solid var(--line); }
+
+  #entries { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 0; }
+  #entries::-webkit-scrollbar { width: 6px; }
+  #entries::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+  .entry {
+    position: relative;
+    display: flex; align-items: center; gap: 9px;
+    margin: 3px 6px; padding: 7px 9px;
+    background: transparent; border-radius: 8px; cursor: pointer;
+  }
+  .entry:hover { background: var(--tab); }
+  .entry.active { background: var(--tab-active); }
+  /* Gold accent on the edge facing the content area. */
+  body[data-side="left"]  .entry.active { box-shadow: inset -3px 0 0 var(--gold); }
+  body[data-side="right"] .entry.active { box-shadow: inset  3px 0 0 var(--gold); }
+
+  .entry img.logo { flex: none; width: 26px; height: 26px; border-radius: 6px; }
+  .entry .tile {
+    flex: none; width: 26px; height: 26px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 13px; font-weight: 600;
+  }
+  .entry .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .entry .close {
     flex: none; width: 17px; height: 17px; padding: 0;
     border: none; border-radius: 4px; background: transparent;
     color: var(--dim); font-size: 13px; line-height: 1; cursor: pointer;
+    visibility: hidden;
   }
-  .tab .close:hover { background: #3a2430; color: #ff9db0; }
-  .tab input.rename {
-    width: 110px; background: var(--bg); color: var(--text);
+  .entry:hover .close, .entry.active .close { visibility: visible; }
+  .entry .close:hover { background: #3a2430; color: #ff9db0; }
+  .entry input.rename {
+    flex: 1; min-width: 0; background: var(--bg); color: var(--text);
     border: 1px solid var(--gold); border-radius: 3px; font: inherit; padding: 1px 4px;
   }
-  #add {
-    flex: none; align-self: center; width: 24px; height: 24px;
-    border: 1px solid var(--line); border-radius: 6px;
-    background: var(--tab); color: var(--text); font-size: 15px; cursor: pointer;
+
+  /* Logo-only mode (shelf dragged below the name threshold). */
+  body.compact .entry { justify-content: center; padding: 7px 0; }
+  body.compact .entry .name, body.compact .entry .close { display: none; }
+
+  /* ---- shelf foot: + and gear ---- */
+  #foot {
+    flex: none; display: flex; gap: 6px; padding: 7px;
+    border-top: 1px solid var(--line);
   }
-  #add:hover { background: var(--tab-active); }
+  body.compact #foot { flex-direction: column; align-items: center; }
+  #foot button {
+    flex: 1; height: 26px; min-width: 26px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--tab); color: var(--text); font-size: 14px; cursor: pointer;
+  }
+  body.compact #foot button { flex: none; width: 26px; }
+  #foot button:hover { background: var(--tab-active); }
+
+  /* ---- drag handle on the shelf's inner edge ---- */
+  #handle {
+    position: absolute; top: 0; bottom: 0; width: 7px; z-index: 6;
+    cursor: ew-resize;
+  }
+  body[data-side="left"]  #handle { right: -4px; }
+  body[data-side="right"] #handle { left: -4px; }
+  #handle:hover, #handle.dragging { background: rgba(212,169,78,.35); }
+
+  /* ---- popup menus (agent picker / shelf settings) ---- */
   #menu {
-    position: fixed; top: 42px; right: 6px; z-index: 10; width: 330px; max-width: 92vw;
+    position: fixed; bottom: 52px; z-index: 10; width: 320px; max-width: 92vw;
+    max-height: 70vh; overflow-y: auto;
     background: #12161f; border: 1px solid var(--line); border-radius: 8px;
     padding: 5px; box-shadow: 0 10px 28px rgba(0,0,0,.55);
   }
   #menu[hidden] { display: none; }
   #menu button {
-    display: block; width: 100%; text-align: left; padding: 6px 9px;
-    border: none; border-radius: 5px; background: transparent;
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    padding: 6px 9px; border: none; border-radius: 5px; background: transparent;
     color: var(--text); font: inherit; cursor: pointer;
   }
   #menu button:hover { background: var(--tab-active); }
+  #menu button img.logo { width: 18px; height: 18px; border-radius: 4px; }
   #menu .sep { border-top: 1px solid var(--line); margin: 5px 3px; }
+  #menu .head { padding: 6px 9px 2px; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
   #menu .custom { color: var(--gold); }
+  #menu .mark { flex: none; width: 14px; color: var(--gold); }
 </style>
 </head>
-<body>
-  <div id="strip"></div>
+<body data-side="right">
+  <div id="shelf">
+    <div id="entries"></div>
+    <div id="foot">
+      <button id="add" title="New tab">+</button>
+      <button id="gear" title="Shelf settings">⚙</button>
+    </div>
+    <div id="handle" title="Drag to resize the shelf"></div>
+  </div>
   <div id="menu" hidden></div>
 
 <script>
   const invoke = window.__TAURI__.core.invoke;
   const listen = window.__TAURI__.event.listen;
 
-  let presets = [];
-  let state = { tabs: [], activeTab: null };
+  const SHELF_MIN = 52, SHELF_MAX = 248, NAME_THRESHOLD = 120;
 
-  const strip = document.getElementById('strip');
+  let presets = [];
+  let presetByUrl = new Map(), presetByName = new Map();
+  let state = { tabs: [], activeTab: null, shelfWidth: 208, dockSide: 'right' };
+  let dragging = false;
+
+  const shelf = document.getElementById('shelf');
+  const entriesEl = document.getElementById('entries');
   const menu = document.getElementById('menu');
+  const handle = document.getElementById('handle');
+
+  const normUrl = (u) => String(u || '').toLowerCase().replace(/\/+$/, '');
+
+  function logoFor(tab) {
+    const p = presetByUrl.get(normUrl(tab.url)) || presetByName.get(tab.name);
+    return p ? `logos/${p.id}.png` : null;
+  }
+
+  function tileFor(tab) {
+    // Generic tile for custom-URL tabs: first letter on a stable hue.
+    const div = document.createElement('div');
+    div.className = 'tile';
+    let h = 0;
+    for (const ch of tab.name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    div.style.background = `hsl(${h} 35% 38%)`;
+    div.textContent = (tab.name.trim()[0] || '?').toUpperCase();
+    return div;
+  }
+
+  function applyShelf() {
+    document.body.dataset.side = state.dockSide;
+    shelf.style.width = state.shelfWidth + 'px';
+    document.body.classList.toggle('compact', state.shelfWidth < NAME_THRESHOLD);
+  }
 
   function render() {
-    strip.textContent = '';
+    applyShelf();
+    entriesEl.textContent = '';
     for (const tab of state.tabs) {
       const el = document.createElement('div');
-      el.className = 'tab' + (tab.id === state.activeTab ? ' active' : '');
+      el.className = 'entry' + (tab.id === state.activeTab ? ' active' : '');
       el.title = tab.url;
 
-      const label = document.createElement('span');
-      label.className = 'label';
-      label.textContent = tab.name;
-      label.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(el, label, tab); });
-      el.appendChild(label);
+      const src = logoFor(tab);
+      if (src) {
+        const img = document.createElement('img');
+        img.className = 'logo';
+        img.src = src;
+        img.alt = '';
+        img.addEventListener('error', () => img.replaceWith(tileFor(tab)), { once: true });
+        el.appendChild(img);
+      } else {
+        el.appendChild(tileFor(tab));
+      }
+
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = tab.name;
+      name.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(el, name, tab); });
+      el.appendChild(name);
+      el.addEventListener('dblclick', (e) => {
+        if (document.body.classList.contains('compact')) startRename(el, name, tab);
+      });
 
       const close = document.createElement('button');
       close.className = 'close';
@@ -111,17 +224,12 @@
           try { await invoke('activate_tab', { id: tab.id }); } catch (err) { console.error(err); }
         }
       });
-      strip.appendChild(el);
+      entriesEl.appendChild(el);
     }
-    const add = document.createElement('button');
-    add.id = 'add';
-    add.textContent = '+';
-    add.title = 'New tab';
-    add.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
-    strip.appendChild(add);
   }
 
   function startRename(el, label, tab) {
+    if (el.querySelector('input.rename')) return;
     const input = document.createElement('input');
     input.className = 'rename';
     input.value = tab.name;
@@ -146,48 +254,139 @@
     });
     input.addEventListener('blur', () => commit(true));
     input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('dblclick', (e) => e.stopPropagation());
   }
 
-  function toggleMenu() {
-    if (!menu.hidden) { menu.hidden = true; return; }
+  /* ---- popup menus ---- */
+
+  function placeMenu() {
+    // Open beside the shelf foot, into the content area.
+    if (state.dockSide === 'right') { menu.style.right = (state.shelfWidth + 8) + 'px'; menu.style.left = 'auto'; }
+    else { menu.style.left = (state.shelfWidth + 8) + 'px'; menu.style.right = 'auto'; }
+  }
+
+  function closeMenu() { menu.hidden = true; }
+  function toggleMenu(build) {
+    if (!menu.hidden && menu.dataset.kind === build.kind) { closeMenu(); return; }
+    menu.dataset.kind = build.kind;
     menu.textContent = '';
-    for (const p of presets) {
-      const b = document.createElement('button');
-      b.textContent = p.name;
-      b.addEventListener('click', async () => {
-        menu.hidden = true;
-        try { await invoke('create_tab', { name: p.name, url: p.url }); }
-        catch (err) { alert(String(err)); }
-      });
-      menu.appendChild(b);
-    }
-    const sep = document.createElement('div');
-    sep.className = 'sep';
-    menu.appendChild(sep);
-    const custom = document.createElement('button');
-    custom.className = 'custom';
-    custom.textContent = 'Custom URL — any agent, including a local model you run yourself (Glimmer, Spark Open, …)';
-    custom.addEventListener('click', async () => {
-      menu.hidden = true;
-      const url = prompt('Open a new tab at this URL (https://…, or http://localhost:port for a local model):', '');
-      if (!url) return;
-      let name = '';
-      try { name = new URL(url.includes('://') ? url : 'https://' + url).hostname; } catch { /* Rust validates */ }
-      try { await invoke('create_tab', { name: name || 'Custom', url }); }
-      catch (err) { alert(String(err)); }
-    });
-    menu.appendChild(custom);
+    build.fill(menu);
+    placeMenu();
     menu.hidden = false;
   }
 
-  document.addEventListener('click', () => { menu.hidden = true; });
+  function pickerMenu() {
+    return {
+      kind: 'picker',
+      fill(m) {
+        for (const p of presets) {
+          const b = document.createElement('button');
+          const img = document.createElement('img');
+          img.className = 'logo'; img.src = `logos/${p.id}.png`; img.alt = '';
+          b.appendChild(img);
+          b.appendChild(document.createTextNode(p.name));
+          b.addEventListener('click', async () => {
+            closeMenu();
+            try { await invoke('create_tab', { name: p.name, url: p.url }); }
+            catch (err) { alert(String(err)); }
+          });
+          m.appendChild(b);
+        }
+        const sep = document.createElement('div'); sep.className = 'sep'; m.appendChild(sep);
+        const custom = document.createElement('button');
+        custom.className = 'custom';
+        custom.textContent = 'Custom URL — any agent, including a local model you run yourself (Glimmer, Spark Open, …)';
+        custom.addEventListener('click', async () => {
+          closeMenu();
+          const url = prompt('Open a new tab at this URL (https://…, or http://localhost:port for a local model):', '');
+          if (!url) return;
+          let name = '';
+          try { name = new URL(url.includes('://') ? url : 'https://' + url).hostname; } catch { /* Rust validates */ }
+          try { await invoke('create_tab', { name: name || 'Custom', url }); }
+          catch (err) { alert(String(err)); }
+        });
+        m.appendChild(custom);
+        const sep2 = document.createElement('div'); sep2.className = 'sep'; m.appendChild(sep2);
+        const flip = document.createElement('button');
+        flip.textContent = state.dockSide === 'right' ? 'Move shelf to the left' : 'Move shelf to the right';
+        flip.addEventListener('click', async () => {
+          closeMenu();
+          try { await invoke('set_dock_side', { side: state.dockSide === 'right' ? 'left' : 'right' }); }
+          catch (err) { console.error(err); }
+        });
+        m.appendChild(flip);
+      },
+    };
+  }
 
-  // Shortcuts (SPEC §1). Note: these fire while this strip has focus; keys
+  function settingsMenu() {
+    return {
+      kind: 'settings',
+      fill(m) {
+        const head = document.createElement('div');
+        head.className = 'head';
+        head.textContent = 'Shelf side';
+        m.appendChild(head);
+        for (const side of ['left', 'right']) {
+          const b = document.createElement('button');
+          const mark = document.createElement('span');
+          mark.className = 'mark';
+          mark.textContent = state.dockSide === side ? '●' : '';
+          b.appendChild(mark);
+          b.appendChild(document.createTextNode(side === 'left' ? 'Left' : 'Right'));
+          b.addEventListener('click', async () => {
+            closeMenu();
+            if (side !== state.dockSide) {
+              try { await invoke('set_dock_side', { side }); } catch (err) { console.error(err); }
+            }
+          });
+          m.appendChild(b);
+        }
+      },
+    };
+  }
+
+  document.getElementById('add').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(pickerMenu()); });
+  document.getElementById('gear').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(settingsMenu()); });
+  document.addEventListener('click', () => closeMenu());
+
+  /* ---- shelf resize drag ----
+     Dragging the inner edge resizes the shelf. Rust re-fits the content
+     webview live from non-persisted updates; the width is saved once,
+     on release. */
+  let lastPreview = 0;
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    handle.classList.add('dragging');
+    const onMove = (ev) => {
+      const raw = state.dockSide === 'left' ? ev.clientX : window.innerWidth - ev.clientX;
+      const w = Math.min(SHELF_MAX, Math.max(SHELF_MIN, raw));
+      state.shelfWidth = w;
+      applyShelf();
+      const now = performance.now();
+      if (now - lastPreview > 40) {
+        lastPreview = now;
+        invoke('set_shelf_width', { width: w, persist: false }).catch((err) => console.error(err));
+      }
+    };
+    const onUp = () => {
+      dragging = false;
+      handle.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      invoke('set_shelf_width', { width: state.shelfWidth, persist: true }).catch((err) => console.error(err));
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  // Shortcuts (SPEC §1). Note: these fire while this shelf has focus; keys
   // typed into an agent page belong to that page, and no webview lets a
   // wrapper steal them — see the 0.0.3a build notes.
   document.addEventListener('keydown', async (e) => {
     if (!e.ctrlKey) return;
-    if (e.key === 't' || e.key === 'T') { e.preventDefault(); toggleMenu(); }
+    if (e.key === 't' || e.key === 'T') { e.preventDefault(); toggleMenu(pickerMenu()); }
     else if (e.key === 'w' || e.key === 'W') {
       e.preventDefault();
       if (state.activeTab) { try { await invoke('close_tab', { id: state.activeTab }); } catch (err) { console.error(err); } }
@@ -200,9 +399,14 @@
   (async () => {
     try {
       presets = await invoke('get_presets');
+      presetByUrl = new Map(presets.map((p) => [normUrl(p.url), p]));
+      presetByName = new Map(presets.map((p) => [p.name, p]));
       state = await invoke('get_state');
       render();
-      await listen('tabs-changed', (event) => { state = event.payload; render(); });
+      await listen('tabs-changed', (event) => {
+        state = event.payload;
+        if (!dragging) render();
+      });
     } catch (err) {
       console.error(err);
     }

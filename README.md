@@ -29,6 +29,13 @@ agents are guests you invite in.
 
 ## Status
 
+v0.0.5a — **the vertical shelf.** Tabs move to a resizable shelf docked to
+the left or right window edge — **right by default** — chosen from the
+shelf's ⚙ settings menu (the Firefox Settings pattern), never by dragging.
+Drag the shelf's inner edge to resize it: wide shows each agent's logo and
+name, narrow folds to logos only. Every preset agent carries its real
+logo, bundled locally in `ui/logos/`.
+
 v0.0.4a — **the AI Orbit Emblem.** The official artwork (logo.png) replaces
 the placeholder icon across the full icon set; the emblem also fronts this
 README.
@@ -50,15 +57,19 @@ Cargo/semver requires.)
 
 ## Tabs
 
-The **+** button at the end of the tab strip opens the agent picker. The
+The **+** button at the foot of the tab shelf opens the agent picker. The
 preset list carries the most popular AI chat assistants worldwide:
 
 Muse (<https://muse.ai>) · ChatGPT · Claude · Gemini · Microsoft Copilot ·
 Grok · Perplexity · Meta AI · DeepSeek · Qwen · Kimi · Le Chat (Mistral) ·
 Doubao — plus **Custom URL** for anything else. The same preset can be
 opened more than once (two tabs, two accounts of the same agent is a
-legitimate use). Double-click a tab's name to rename it; tabs and their
-order are restored on launch, still signed in.
+legitimate use). Double-click a tab's name to rename it; tabs, their
+order, the shelf's width, and its dock side are restored on launch, still
+signed in.
+
+The agent logos shown on the shelf are trademarks of their respective
+owners, shown for identification only.
 
 - **Isolation:** every tab gets its own webview profile directory
   (`profiles/<tab-id>/` in the app data folder) — its own cookies and
@@ -133,7 +144,8 @@ build.rs              tauri-build hook
 src/main.rs           app entry: host window, commands, resize handling
 src/tabs.rs           all multi-webview tab code (the only place it lives)
 src/config.rs         tabs.json load/save + per-tab profile directories
-ui/index.html         the tab strip — the whole frontend, one small file
+ui/index.html         the tab shelf — the whole frontend, one small file
+ui/logos/             the preset agents' logos, bundled (see Tabs above)
 tauri.conf.json       app + bundle configuration
 capabilities/         Tauri 2 permission capabilities (host window only;
                       tab webviews get none — agent sites can't reach IPC)

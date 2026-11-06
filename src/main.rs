@@ -1,10 +1,11 @@
 // Nubisianua — a lightweight doorway to your cloud AI.
 //
 // This is a wrapper, not a local model: one native window (the host) holds
-// a slim tab strip — the project's own tiny frontend in ui/index.html —
-// and one child webview per tab, each opening onto a cloud AI using the
-// operating system's own webview (WebView2 on Windows, WebKitGTK on
-// Linux). Nothing thinks locally except the window itself.
+// a vertical tab shelf — the project's own tiny frontend in ui/index.html,
+// docked left or right (right by default) — and one child webview per
+// tab, each opening onto a cloud AI using the operating system's own
+// webview (WebView2 on Windows, WebKitGTK on Linux). Nothing thinks
+// locally except the window itself.
 //
 // All multi-webview code lives in src/tabs.rs; tab persistence lives in
 // src/config.rs. See SPEC-0.0.3a-tabs.md for the design.
@@ -36,7 +37,7 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Keep the active tab fitted under the strip when the host
+            // Keep the active tab fitted beside the shelf when the host
             // window resizes. Resize only — this handler never creates
             // webviews (Windows deadlock rule).
             if window.label() == "main" {
@@ -55,6 +56,8 @@ fn main() {
             tabs::close_tab,
             tabs::rename_tab,
             tabs::cycle_tab,
+            tabs::set_shelf_width,
+            tabs::set_dock_side,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nubisianua");
