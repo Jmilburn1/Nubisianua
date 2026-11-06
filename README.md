@@ -1,5 +1,7 @@
 # Nubisianua
 
+![Nubisianua — the AI Orbit Emblem](logo.png)
+
 **Pronounced:** NOO-bis-ee-AH-noo-ah
 **Meaning:** "the Cloud's Doorway" — Latin *Nubis* (of the cloud) + *Ianua* (doorway)
 
@@ -26,6 +28,10 @@ agents are guests you invite in.
   public Muse website; you sign in with your own Muse account as usual.
 
 ## Status
+
+v0.0.4a — **the AI Orbit Emblem.** The official artwork (logo.png) replaces
+the placeholder icon across the full icon set; the emblem also fronts this
+README.
 
 v0.0.3a — **tabs with friends.** One window now holds many agents in tabs
 (see *Tabs* below), each with its own sign-in, restored on launch. Windows
