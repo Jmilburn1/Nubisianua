@@ -1,0 +1,19 @@
+# Rust / Cargo
+/target
+**/*.rs.bk
+
+# Tauri generated schemas
+/gen
+
+# Build output
+/dist
+
+# Logs
+*.log
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

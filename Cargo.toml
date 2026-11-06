@@ -1,0 +1,20 @@
+[package]
+name = "nubisianua"
+version = "0.0.1-a"
+description = "A lightweight doorway to your cloud AI — a small native window for Muse on Windows and Linux, no browser required."
+authors = ["John Milburn"]
+license = "MIT"
+edition = "2021"
+
+# The crate root IS the Tauri app directory in this scaffold
+# (tauri.conf.json, build.rs, capabilities/ and icons/ live beside Cargo.toml).
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[profile.release]
+lto = true
+codegen-units = 1
