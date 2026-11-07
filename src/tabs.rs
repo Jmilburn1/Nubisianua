@@ -147,6 +147,95 @@ fn set_window_title(app: &AppHandle, inner: &Inner) {
     }
 }
 
+/// Linux layout pass (v0.0.8a) — the fix for the Dell 2 / Rawhide canary
+/// finding, where the shelf rendered "in the top margin only" and the
+/// active tab webview filled the whole window below it at full width.
+///
+/// Diagnosis, from the pinned crates' own sources:
+/// - On Linux, tauri-runtime-wry (2.12.3) builds BOTH the host (window
+///   content) webview and every `Window::add_child` webview into the
+///   window's `default_vbox()` — a vertical `gtk::Box` (the
+///   `WebviewKind::WindowChild` arm: "only way to account for menu bar
+///   height, and also works for multiwebviews :)").
+/// - wry (0.57.1) `add_to_container` honors a webview's bounds ONLY in a
+///   `GtkFixed` parent; in a `GtkBox` it does
+///   `pack_start(webview, true, true, 0)` and the bounds are ignored.
+/// - wry's `set_bounds` — what `Webview::set_position`/`set_size` call —
+///   is a no-op on Wayland unless the webview sits in a fixed parent.
+///   So on Linux/Wayland `content_bounds`/`apply_visibility` never moved
+///   anything: the geometry was pure GtkBox — host and child stacked
+///   vertically, both expanding, the child taking the window at full
+///   width under a host squeezed to a band at the top. Exactly the field
+///   report.
+///
+/// The fix works WITH the box instead of fighting it, using only public
+/// Tauri/GTK APIs, all of it from the GTK main thread:
+/// - orient the window's vbox HORIZONTAL, so box order is side-by-side;
+/// - the host webview (identified by a widget name set on first pass —
+///   it is the box's first child by construction: created first, and
+///   children are only ever appended) is re-packed non-expanding via
+///   the GtkBox "expand" child property and given an exact size
+///   request = the shelf width, so the box hands it precisely the
+///   shelf's strip and the active child (still expand=true) takes the
+///   rest — the same rectangle `content_bounds` computes on Windows;
+/// - dock side becomes box order: host first (left) or last (right);
+/// - window resizes and show/hide need no code at all — the box
+///   re-lays-out on its own, exactly as `apply_visibility`'s show/hide
+///   already drives it.
+///
+/// The pass is idempotent and re-derives everything from the box's
+/// current children, so the calls below (restore start/end, tab
+/// creation, shelf width and dock changes) converge under any
+/// interleaving with webview creation on the main thread. Nubisianua
+/// has no window menu, so the vbox carries webviews only. On Windows
+/// (and macOS) this is a no-op stub — geometry there already works.
+#[cfg(target_os = "linux")]
+fn linux_layout_pass(app: &AppHandle, side: DockSide, shelf_width: f64) {
+    use gtk::prelude::*;
+
+    const HOST_WIDGET_NAME: &str = "nubisianua-host";
+
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(window) = handle.get_window(HOST_LABEL) else {
+            return;
+        };
+        let Ok(vbox) = window.default_vbox() else {
+            return;
+        };
+        vbox.set_orientation(gtk::Orientation::Horizontal);
+
+        let children = vbox.children();
+        // Find the host webview's widget: the one named on an earlier
+        // pass, else the box's first child (see the header comment) —
+        // name it so later passes find it wherever the dock order put it.
+        let host = children
+            .iter()
+            .find(|w| w.widget_name().as_str() == HOST_WIDGET_NAME)
+            .cloned()
+            .or_else(|| {
+                let first = children.into_iter().next()?;
+                first.set_widget_name(HOST_WIDGET_NAME);
+                Some(first)
+            });
+        let Some(host) = host else {
+            return;
+        };
+
+        // The shelf takes exactly its requested width, never a share of
+        // the leftover space.
+        vbox.child_set_property(&host, "expand", &false.to_value());
+        host.set_size_request(shelf_width.round() as i32, -1);
+        match side {
+            DockSide::Left => vbox.reorder_child(&host, 0),
+            DockSide::Right => vbox.reorder_child(&host, -1),
+        }
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn linux_layout_pass(_app: &AppHandle, _side: DockSide, _shelf_width: f64) {}
+
 /// Show the active tab's webview fitted to the content area and hide every
 /// other tab's webview. Switching never reloads a page (spec §1).
 fn apply_visibility(app: &AppHandle, inner: &Inner) {
@@ -215,6 +304,10 @@ pub async fn restore(app: &AppHandle, state: &State<'_, TabManager>) {
             inner.config.shelf_width,
         )
     };
+    // Linux: put the window's GtkBox into shelf layout BEFORE the first
+    // child is packed into it (queued ahead of creation on the main
+    // thread), and again after, to settle the dock order (v0.0.8a).
+    linux_layout_pass(app, side, shelf_width);
     for (entry, is_active) in entries {
         match create_webview(app, &entry, is_active, side, shelf_width) {
             Ok(webview) => {
@@ -226,6 +319,7 @@ pub async fn restore(app: &AppHandle, state: &State<'_, TabManager>) {
     }
     let inner = state.inner.lock().unwrap();
     apply_visibility(app, &inner);
+    linux_layout_pass(app, inner.config.dock_side, inner.config.shelf_width);
     emit_snapshot(app, &inner);
     // If every webview failed to create, the shelf still shows the tab list
     // and the + button works — the app never opens windowless (spec §7.6).
@@ -332,6 +426,9 @@ pub async fn create_tab(
     inner.config.active_tab = Some(entry.id.clone());
     config::save(&app, &inner.config);
     apply_visibility(&app, &inner);
+    // Linux: the new child was just packed into the window's GtkBox —
+    // settle the dock order and shelf width around it (v0.0.8a).
+    linux_layout_pass(&app, inner.config.dock_side, inner.config.shelf_width);
     if let Some(wv) = inner.webviews.get(&entry.id) {
         let _ = wv.set_focus();
     }
@@ -475,6 +572,9 @@ pub async fn set_shelf_width(
         config::save(&app, &inner.config);
     }
     apply_visibility(&app, &inner);
+    // Linux: the shelf's strip IS the host webview's size request in the
+    // window's GtkBox — this is what actually resizes it there (v0.0.8a).
+    linux_layout_pass(&app, inner.config.dock_side, inner.config.shelf_width);
     if persist {
         emit_snapshot(&app, &inner);
     }
@@ -497,6 +597,9 @@ pub async fn set_dock_side(
     inner.config.dock_side = side;
     config::save(&app, &inner.config);
     apply_visibility(&app, &inner);
+    // Linux: dock side is the host widget's position in the GtkBox
+    // (first = left, last = right) — move it (v0.0.8a).
+    linux_layout_pass(&app, inner.config.dock_side, inner.config.shelf_width);
     emit_snapshot(&app, &inner);
     Ok(snapshot(&inner))
 }

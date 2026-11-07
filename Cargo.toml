@@ -1,6 +1,6 @@
 [package]
 name = "nubisianua"
-version = "0.0.7-a"
+version = "0.0.10-a"
 description = "A lightweight doorway to your cloud AI — a small native window for Muse on Windows and Linux, no browser required."
 authors = ["John Milburn"]
 license = "MIT"
@@ -22,6 +22,13 @@ tauri = { version = "=2.12.5", features = ["unstable"] }
 # option, so serde is the one deliberate addition.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The same gtk Tauri 2.12 itself depends on (0.18), so the types unify.
+# Used only by the Linux shelf-layout pass in src/tabs.rs (v0.0.8a),
+# which drives the window's GtkBox directly — see the long comment
+# there for why Linux needs it and Windows doesn't.
+gtk = { version = "0.18", features = ["v3_24"] }
 
 [profile.release]
 lto = true

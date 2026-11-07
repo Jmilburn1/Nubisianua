@@ -29,6 +29,52 @@ agents are guests you invite in.
 
 ## Status
 
+v0.0.10a — **Linux icons: readable, permanently.** The 0.0.9a field
+test found the layer standing in front of the name-matching problem:
+permissions. The project icons carried mode 660, the delivery ZIP
+stored it, the clone unpacked it, and the RPM bundler preserved it
+while installing root-owned — so the emblem sat at the right hicolor
+path under the right name, unreadable by the user's own session, and
+KDE showed a blank. A manual `chmod 644` on the installed icons (plus
+a cache refresh and shell restart) brought the emblem up in the menu
+and on the taskbar. This run makes it permanent two ways: the icons
+now ship at mode 644 in the project and the ZIP, and the Linux
+post-install script sets the installed icons world-readable itself
+before refreshing the caches, whatever the build tree's modes said.
+The 0.0.9a lowercase desktop twin stays — it is the correct window
+association. Windows packaging is untouched.
+
+v0.0.9a — **Linux package icons.** The 0.0.8a RPM shipped the emblem
+correctly — right files, right hicolor paths, right name
+(`Icon=nubisianua`) — yet on the test rig the menu entry showed no
+icon, the taskbar none, and the window wore the wrong one. The break
+is in how the pieces introduce themselves: the bundler names the
+desktop entry after the product name (`Nubisianua.desktop`), but the
+running window's Wayland app_id is the binary name (`nubisianua`),
+and KDE matches a window to its entry by that id, capitals and all —
+so the entry, and its icon, were never picked up for the window. The
+Linux packages now run a small post-install script
+(`scripts/linux-post-install.sh`, wired in `tauri.linux.conf.json`)
+that leaves a lowercase twin of the entry — marked `NoDisplay`, so
+menus still show exactly one Nubisianua — for the window matching to
+find, refreshes the icon and desktop caches at install time, and
+removes the twin again on uninstall. The icons themselves, the
+palette, and the Windows packaging are unchanged.
+
+v0.0.8a — **the Linux shelf fix.** First Linux build (on the fleet's
+Rawhide test rig) launched and rendered Muse fine, but the shelf
+appeared only in a thin band at the top of the window with the active
+tab filling everything below at full width: on Linux, Tauri/wry place
+every webview of a window into a vertical GtkBox and ignore the
+position/size the app asks for (those are honored only in a GtkFixed
+container, and `set_bounds` is a no-op on Wayland outside one). The
+shelf now lays out *through* that box instead — it is turned
+horizontal, the shelf's webview takes exactly its width inside it,
+and the active tab takes the rest, docked left or right just as on
+Windows. Windows behavior is unchanged. This run also ships
+`tauri.linux.conf.json`, the Linux version spelling (see
+*Versioning*).
+
 v0.0.7a — **closing tabs at icon width.** With the shelf folded to
 logos only, a tab can now be closed without expanding the shelf first:
 hover an icon for a small × badge, middle-click the entry, or
@@ -71,6 +117,13 @@ The first phase runs 0.0.1a, 0.0.2a, and so forth until it reaches a stage
 considered somewhat stable — then the next phase starts over at 0.0.1b.
 (In `Cargo.toml` the same version is stored as `0.0.3-a`, the spelling
 Cargo/semver requires.)
+
+**Linux bundles** read their version from `tauri.linux.conf.json`,
+which Tauri merges only on Linux: RPM and DEB package versions forbid
+the `-` in `0.0.9-a`, so the file carries the same version spelled
+with `+` instead — `0.0.9+a`. It must be bumped in step with the main
+version on every run, or the Linux packages will wear last run's
+number.
 
 ## Tabs
 
@@ -164,6 +217,11 @@ src/config.rs         tabs.json load/save + per-tab profile directories
 ui/index.html         the tab shelf — the whole frontend, one small file
 ui/logos/             the preset agents' logos, bundled (see Tabs above)
 tauri.conf.json       app + bundle configuration
+tauri.linux.conf.json Linux-only config merge: the RPM/DEB-legal
+                      version spelling (see Versioning above) and
+                      the Linux package script wiring below
+scripts/              Linux package post-install / post-remove
+                      scripts (desktop-entry icon fix, v0.0.9a)
 capabilities/         Tauri 2 permission capabilities (host window only;
                       tab webviews get none — agent sites can't reach IPC)
 icons/                app icons (placeholder doorway glyph)

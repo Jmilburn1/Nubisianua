@@ -1,0 +1,1 @@
+{"bundle":{"linux":{"deb":{"postInstallScript":"scripts/linux-post-install.sh","postRemoveScript":"scripts/linux-post-remove-deb.sh"},"rpm":{"postInstallScript":"scripts/linux-post-install.sh","postRemoveScript":"scripts/linux-post-remove-rpm.sh"}}},"version":"0.0.10+a"}
