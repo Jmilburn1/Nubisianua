@@ -29,6 +29,172 @@ agents are guests you invite in.
 
 ## Status
 
+v0.0.17a — **The software pulls the paste trigger.** The
+0.0.16a chain passed its field test end to end — drop,
+wl-copy, Ctrl+V, image attached — and John asked for the
+last manual step gone, in his words: "now that we have it
+landing can we have the software do the pasting?" So a
+loaded image is now followed, on Linux, by an auto-paste
+on the tab the drop landed on, in two steps: a small
+focus-aim script evaluated in the page (if focus isn't
+already in an editable element, the largest visible
+composer candidate — a `contenteditable` or a textarea —
+is focused; generic heuristics, no per-site selectors),
+then, a beat later, WebKit's own **Paste editing
+command** fired natively on the tab's WebView — the same
+pipeline a physical Ctrl+V resolves to, so the page
+receives a real paste event whose DataTransfer carries
+the image as a File. The workflow is now one motion:
+**drop a screenshot on a tab → it attaches in the
+composer.** The honest caveat: if the aim missed — the
+composer wasn't the biggest editable, or the site
+swallows synthetic focus — the paste may land nowhere;
+the clipboard stays loaded either way, so the proven
+**Ctrl+V remains the fallback**, word for word the
+0.0.16a flow. Windows and the rest are unchanged. Still
+a **reversible trial**.
+
+v0.0.16a — **A new courier for the clipboard.** The 0.0.15a
+pipeline worked end to end — native events, real paths, the
+image found and loaded — and then its last step vanished:
+John's Klipper history held text entries only, *no image at
+all*, and Ctrl+V in the page came up empty. GTK3's Clipboard
+had reported success and simply never landed the offer on
+his KDE Wayland session. So the design stays and the
+courier goes: the clipboard act now pipes the image
+(re-encoded to PNG in memory) to **`wl-copy`**, the
+wl-clipboard tool — a small Wayland-native client that
+forks and holds the offer itself, which is exactly the
+persistence model KWin respects. A delivery that fails now
+says so in the log, and a missing `wl-copy` logs its own
+remedy. The workflow doesn't move: **drop a screenshot on
+a tab → the image lands on your clipboard → Ctrl+V it into
+the composer.** **Requirements:** Linux needs the
+`wl-clipboard` package (`sudo dnf install -y wl-clipboard`)
+— the RPM and DEB now declare it as a dependency; AppImage
+users install it by hand. Still a **reversible trial**.
+
+v0.0.15a — **The bridge moves to the native layer.** The
+0.0.14a field test fired *nothing*: not one bridge log line on
+drop. John's observations named why — the cursor showed the
+GTK widget's green **+** (the drop was accepted at widget
+level), yet the Muse page never even raised its "drag files
+here" overlay, because the in-page script arm was starved:
+WebKitGTK will not let page JavaScript read an external
+drop's payload (`getData('text/uri-list')` yields nothing
+usable at drop time, whatever the native editor path can do
+with the same data). So the interception moves down a layer,
+to where the uri-list demonstrably exists: Tauri's own
+drag-drop event, read by wry at the widget. Both historical
+disables come out (the window config flag and the per-webview
+builder call), the script's drop arm and the sentinel
+navigation are removed as dead, and native events now feed
+the same clipboard code 0.0.14a wrote — guarded so a drop
+landing on the tab shelf itself is logged and ignored, never
+answered. The workflow is unchanged: **drop a screenshot on
+a tab → the image lands on your clipboard → Ctrl+V it into
+the composer.** Still a **reversible trial**: if the native
+layer disappoints too, it comes back out as cleanly as the
+in-page arm did.
+
+v0.0.14a — **The drop-to-clipboard bridge.** The drag mystery
+ended with a control test, not a theory: dragging a screenshot
+into the ChatGPT tab DID reach the page — WebKitGTK just
+delivers external drops as `text/uri-list` only, with no `File`
+objects attached. ChatGPT's composer fell back to inserting
+the file's path as text; Muse's, which reads Files, found
+none and silently did nothing. The delivery *form* was the
+whole bug. So this round bridges it, with the same machinery
+that fixed links: the tabs' initialization script gains a
+drop arm that acts only when a drop carries a uri-list and no
+Files (native drops elsewhere are untouched), lifts the
+file:// entries out of the payload, and hands them to the Rust
+side through a navigation to a reserved sentinel host, which
+the navigation gate always blocks. On Linux the gate loads
+the first image among them onto the system clipboard — so the
+flow is: **drop a screenshot on a tab → the image lands on
+your clipboard → Ctrl+V it into the composer.** If the drop
+holds no image, the uri-list text goes on the clipboard
+instead. The bridge ships as a **reversible trial**, blessed
+as one: whether WebKitGTK hands a pasted clipboard image to
+the page as a File is the question this build's field test
+exists to answer, and if the answer is no, the bridge comes
+back out as cleanly as it went in.
+
+v0.0.13a — **Links, intercepted where they live.** The 0.0.12a
+field test returned its verdict: with the instrumented build
+running from a terminal, clicking a cross-origin link in the
+Muse tab produced *total* silence — no new-window request, no
+navigation event. The request dies inside WebKitGTK before any
+native hook can see it, so this round stops waiting at the
+native door and intercepts inside the page instead. Every tab
+webview now carries a small initialization script — no Tauri
+APIs, no IPC; it only navigates its own frame — that catches
+clicks on external or new-window links and cross-origin
+`window.open` calls and re-aims the frame at the same URL
+carrying a marker appended to its fragment (`#nubisianua-ext`);
+the Rust `on_navigation` hook recognises the marker, strips it
+back off, hands the *clean* URL to the OS default browser, and
+blocks the navigation, so the tab never leaves its own page.
+Same-tab navigation — including cross-origin sign-in redirect
+chains, which carry no marker — passes untouched, and all the
+0.0.12a logging stays, so the hand-off is on the record. The
+per-webview drag-drop disable from 0.0.12a is unchanged; its
+field verdict is still out. One honest limit: pages that fake
+links without real anchors (pure JS click targets) leave the
+script nothing to catch.
+
+v0.0.12a — **A diagnostic build: make the failures testify.** Both
+0.0.11a fixes failed the field test on Fedora 45 / WebKitGTK: links
+in a tab still did nothing (with the OS proven innocent — the same
+URL opens via `xdg-open`, and the default browser and https scheme
+handler both point at Firefox), and screenshot drops were still
+swallowed. So this round changes no routing; it instruments it.
+Every tab webview now logs to stderr (run it from a terminal) with
+the tag `[nubisianua-link]`: each new-window request with its
+target, the tab's tracked current URL, and the decision taken —
+and the opener call's result is logged instead of silently
+discarded, the one place a failure could hide. Same-tab origin
+changes are logged too. Reading the pinned Tauri and wry sources
+says the handler wiring reaches Linux child webviews intact, so
+the log separates the remaining suspects: a click that produces no
+log line means WebKitGTK never raised a new-window request for it;
+a logged opener error means the browser hand-off is the break.
+Drag-drop gets attempt #2, aimed where the evidence points: the
+window-level flag from 0.0.11a only ever reached the host webview,
+while tab webviews carry Tauri's per-webview drag-drop handler by
+default — and on GTK that handler's widget-level drag signals
+consume the drop before the page's own drop handling sees it — so
+tab builders now disable that handler explicitly
+(`[nubisianua-dragdrop]` confirms it per tab at startup). One
+permanent fix rides along: the Linux config now names its own
+bundle targets (rpm, appimage, deb), so a plain `cargo tauri
+build` on Linux produces installers instead of silently skipping
+bundling the way it did when only the Windows target was listed.
+Hypotheses again, plainly labeled: this build stands or falls on
+the terminal log and one dragged screenshot.
+
+v0.0.11a — **Links open; screenshots are on notice.** First field
+findings from daily use, fixed in the wrapper's own terms. (1) A link
+inside any agent's page — the URL in a chat answer, opened with
+`target=_blank` — did nothing at all: no code answered the webview's
+new-window request, so the platform dropped it and John copy-pasted
+links into Firefox by hand. Tab webviews now route new-window
+requests on the Rust side, with no new powers for the pages
+themselves: a request on the same origin as the page the tab is
+showing (where sign-in and OAuth popups live), or a host-less one
+(`about:blank`, where popup flows start), opens as a real popup;
+anything else is handed to the operating system's default browser
+and the in-app window is denied. Ordinary in-tab navigation was
+never intercepted and is not now. (2) Dragging a screenshot into a
+chat was swallowed before the page saw it — the prime suspect is
+Tauri's window-level drag-drop interception, so the host window now
+ships with `dragDropEnabled` off and HTML5 drops should reach the
+page. That second fix is a **hypothesis until proven by hand**:
+it stands or falls on dragging a screenshot into a Muse chat on
+the real build, and if the window setting is not the culprit the
+next round builds the forwarder this one deliberately skipped.
+
 v0.0.10a — **Linux icons: readable, permanently.** The 0.0.9a field
 test found the layer standing in front of the name-matching problem:
 permissions. The project icons carried mode 660, the delivery ZIP
@@ -202,6 +368,12 @@ sudo dnf install webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel librs
 cargo install tauri-cli --version "^2"
 cargo tauri build
 ```
+
+Runtime note: on Linux the drop-to-clipboard bridge hands the
+image to `wl-copy`, so the finished app also needs the
+`wl-clipboard` package (`sudo dnf install -y wl-clipboard`).
+The RPM and DEB declare it as a dependency; the AppImage
+cannot, so AppImage users install it by hand.
 
 Linux bundle targets (RPM / AppImage) will be added to `tauri.conf.json` in
 that phase.

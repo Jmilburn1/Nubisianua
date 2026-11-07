@@ -20,6 +20,11 @@ use tauri::{Manager, WindowEvent};
 
 fn main() {
     tauri::Builder::default()
+        // v0.0.11a: opener is here ONLY so src/tabs.rs can hand
+        // cross-origin new-window requests from tab webviews to the OS
+        // default browser via its Rust API. No webview gets an opener
+        // capability — tab webviews keep zero IPC (see capabilities/).
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Load (or default) the tab list and hand it to the tab manager.
             let cfg = config::load(app.handle());

@@ -1,6 +1,6 @@
 [package]
 name = "nubisianua"
-version = "0.0.10-a"
+version = "0.0.17-a"
 description = "A lightweight doorway to your cloud AI — a small native window for Muse on Windows and Linux, no browser required."
 authors = ["John Milburn"]
 license = "MIT"
@@ -22,13 +22,27 @@ tauri = { version = "=2.12.5", features = ["unstable"] }
 # option, so serde is the one deliberate addition.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# v0.0.11a: hand cross-origin new-window requests from tab webviews to the
+# OS default browser (src/tabs.rs). Used from Rust only — tab webviews
+# keep zero IPC/capabilities, so no opener permission is granted to any
+# webview; the plugin is initialized in main.rs purely so its Rust-side
+# OpenerExt is available to the app itself.
+tauri-plugin-opener = "2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # The same gtk Tauri 2.12 itself depends on (0.18), so the types unify.
-# Used only by the Linux shelf-layout pass in src/tabs.rs (v0.0.8a),
+# Used by the Linux shelf-layout pass in src/tabs.rs (v0.0.8a),
 # which drives the window's GtkBox directly — see the long comment
-# there for why Linux needs it and Windows doesn't.
+# there for why Linux needs it and Windows doesn't — and, since
+# v0.0.15a, for its gdk_pixbuf re-export, which loads and
+# re-encodes dropped images for the clipboard bridge.
 gtk = { version = "0.18", features = ["v3_24"] }
+# The exact version wry/tauri already lock (their `=2.0.2` pin), so
+# the WebView type unifies with the one `Webview::with_webview`
+# hands out through `PlatformWebview::inner()`. Used since
+# v0.0.17a by the auto-paste in src/tabs.rs, which calls WebKit's
+# native Paste editing command on the dropped-on tab's WebView.
+webkit2gtk = "=2.0.2"
 
 [profile.release]
 lto = true
