@@ -19,6 +19,24 @@ mod tabs;
 use tauri::{Manager, WindowEvent};
 
 fn main() {
+    // v0.0.27a — Linux graphics workarounds, set BEFORE Tauri/GTK init so
+    // both the UI process and the WebKitWebProcess it spawns inherit them.
+    // Field-verified on Kubuntu 26.10 / RTX 3060, 2026-11-18:
+    // - GDK_BACKEND=x11: native Wayland dies on open with
+    //   "Error 71 (Protocol error) dispatching to Wayland display";
+    //   XWayland is the working path.
+    // - WEBKIT_DISABLE_DMABUF_RENDERER=1: WebKitGTK's DMA-BUF renderer
+    //   deadlocks inside NVIDIA's EGL driver on cross-monitor moves —
+    //   main thread stuck in libnvidia-eglcore, watchdog aborts the web
+    //   process (SIGABRT), whole machine locks up.
+    // Launcher env vars get wiped by reinstalls, so the app sets them
+    // itself. Linux only — Windows is untouched.
+    #[cfg(target_os = "linux")]
+    {
+        std::env::set_var("GDK_BACKEND", "x11");
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     tauri::Builder::default()
         // v0.0.11a: opener is here ONLY so src/tabs.rs can hand
         // cross-origin new-window requests from tab webviews to the OS

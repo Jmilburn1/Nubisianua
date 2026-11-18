@@ -29,6 +29,316 @@ agents are guests you invite in.
 
 ## Status
 
+v0.0.27a — **The graphics workarounds live in the app now, not the launcher.**
+Two coredump-confirmed lockups on 2026-11-18: native Wayland dies on open
+(Error 71), and moving the window across screens kills the WebKit web
+process inside NVIDIA's EGL driver (watchdog SIGABRT, whole machine locks
+up). The launcher env vars that fixed both got wiped by a reinstall, so
+main() now sets `GDK_BACKEND=x11` and `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+itself, before Tauri/GTK init, Linux only — a plain install just works.
+
+v0.0.26a — **Startup deadlock fix: the app no longer freezes black and dies on Kubuntu/X11.**
+`apply_visibility` used to call `Window::scale_factor` while holding the tab-state
+lock — from a background task that blocks until the main thread answers, while
+the main thread's resize handler blocks on that same lock. Both sides waited
+forever. The layout pass now reads what it needs under a short lock, computes
+bounds with no lock held, and only then re-locks to apply — no lock is ever
+held across a main-thread round-trip.
+
+v0.0.25a — **Lazy tab loading: only the tab you're looking at loads.**
+John's field finding of 2026-11-16: Fedora on MAIN had gone
+"not as snappy as it was on fresh install by a LOT". The
+diagnostics cleared disk (11 GB of 929 used) and RAM (121 GB
+free) and caught the cause in the act — at login, Nubisianua's
+tabs were all waking up at once, two WebKit processes at 50%
+and 31% of a core, settling on their own within ~3 minutes.
+So restore now creates a webview ONLY for the active tab; every
+other tab stays a shelf label (label/URL/layout persist as
+before) until the user clicks it, at which point its webview is
+built and its URL loads — Ctrl+Tab and closing the active tab
+onto a never-opened neighbor take the same path. Once loaded a
+tab stays loaded until closed. The link interceptor, the
+in-chat video player, presets, per-tab profiles and all other
+behavior are untouched. One defect caught in this build's own
+verification, before it ever left the bench: a freshly created
+lazy webview lands after the host widget in the window's GtkBox,
+which shoved the shelf from the right edge to the left the first
+time a lazy tab was clicked — fixed by re-running the Linux
+layout pass after an on-demand creation, exactly as `create_tab`
+already does. Not field-proven: the smaller login storm and
+on-click loading are for John's eyes to confirm.
+
+v0.0.24a — **No badge, no gold, and the title tells
+the truth.** 0.0.23a passed John's fresh-video test
+("I like it"), and this run is purely his two
+cosmetic directives of 2026-11-08 20:55, plus one
+defect his screenshot exposed while he was asking.
+(1) "Change the color from gold to.. something that
+matches the app": every gold accent in the in-chat
+player bar — button and speed-select borders, the
+bar's top rule, the seek and volume thumbs, the
+CC-on colour — is now the app's own dark-mode
+neutral, off-white #f2f2f2 for fills, thumbs and
+active states, hairlines in the same off-white at
+low alpha, muted grey #9a9a9e staying on secondary
+elements. The Screening Room page's own gold accent
+variable was recoloured the same way for
+consistency; the shelf's gold stays — he didn't
+ask about the shelf. (2) Hide or move the "NUB
+player active" banner — "it is right over the call
+button": the badge is removed, not moved. Its
+diagnostic job ended when execution was proven
+across 0.0.21a–0.0.23a; nothing creates it now, and
+a cleanup in the script deletes any badge an older
+build left sitting in a live page. The
+[nubisianua-player] console logs stay. (3) The
+title: John's screenshot showed the running title
+bar reading only "Nubisianua — Muse", no version,
+despite the config title carrying one. The cause
+was in Rust, not the page: `set_window_title` has
+always overwritten the window title on every tab
+change with "Nubisianua — {tab name}" — em dash, no
+version. It now composes "Nubisianua -- {tab name}
+-- {version}" in John's format, the version derived
+from the crate version (Cargo.toml, the single
+source of truth kept in step with tauri.conf.json),
+so the at-a-glance build identification he ordered
+at 0.0.20a survives tab switches at last. The
+static titles in tauri.conf.json and the host
+page's <title> read exactly **Nubisianua -- Muse
+-- v0.0.24a**. Everything else — the one combined
+script, the wrapper gate, dialog-only volume, the
+un-poisoned preference — is untouched from
+0.0.23a. Not field-proven: the badge's absence,
+the neutral bar, and a versioned title bar are
+for John's eyes to confirm.
+
+v0.0.23a — **Un-poison the saved volume.**
+0.0.22a split in the field: the avatar fix passed —
+the presence-card avatar is clean again, John's
+words "so nice to have YOU back in YOUR own little
+CIRCLE!" — but the start-unmuted fix failed: "its
+still muted on start." Reading the shipped 0.0.22a
+code found the loop, mechanics verified in code: the
+enhancer's `volumechange` listener still *learned*
+the preference from external changes after the grace
+window, saving whatever state the page last produced
+into `nubisianua-player-volume`. Muse's player
+forces a muted start; the preview bubbles toggle
+muted as the page pleases. Any such external muted
+state landing outside a grace window poisoned the
+stored preference to muted — and the next video's
+grace machinery then dutifully enforced that poisoned
+"saved" state. The fix enforced the wrong memory.
+This run is volume start state only: (1) the
+`volumechange` listener never writes the preference
+again — it syncs the bar UI, and inside the grace
+window still triggers re-assertion; the preference
+is written solely by our bar's own mute/volume
+handlers and by one migration. (2) Provenance:
+bar-written preferences carry `byBar: true`; a
+stored value without the stamp is untrusted —
+loading falls back to the default (volume 1,
+unmuted) and overwrites the key with that stamped
+default, once, so a poisoned 0.0.22a preference
+self-heals on first run, while a muted preference
+John deliberately sets on the bar later is stamped
+and honoured. (3) During the grace window a
+MutationObserver also watches the video's `muted`
+attribute and re-applies the saved state if it
+appears while the saved state is unmuted;
+it disconnects when grace ends or John takes
+control. (4) Volume is managed for the opened
+player only: preview bubbles are silent looping
+thumbnails by design, so applying, enforcing, and
+persisting skip any video whose wrapper is not
+inside the Radix "Media preview" dialog — the
+preview keeps its bar, enforcement runs only in
+the dialog. Everything else — the one combined
+initialization script, the wrapper gate, the badge,
+CC / speed / resume — is untouched from 0.0.22a.
+The window title now reads exactly
+**Nubisianua -- Muse -- v0.0.23a**. Not
+field-proven: whether a chat video now starts
+unmuted, with John's saved volume, is for his
+fresh-start test to say.
+
+v0.0.22a — **Start with John's volume, not theirs.**
+0.0.21a passed John's Windows field test: the bar
+attaches in the opened player, fullscreen and seek work,
+our unmute button works and holds, and the picture
+advances — in his words, "everything else is working."
+One defect remained, also in his words: "it need to
+start unmuted." The likely mechanism is timing: the
+enhancer applied John's saved volume at
+`loadedmetadata`, then Muse's own player set
+`video.muted = true` as part of starting playback.
+This single-purpose run applies the saved state on
+`loadedmetadata`, `canplay`, `play`, and `playing`,
+then defends it through a bounded grace window after
+each `play` — checks every ~250 ms for about five
+seconds, ending early once the state has held through
+several consecutive checks. A `volumechange` guard
+inside that window returns external overrides to the
+saved state without mistaking our own applications, or
+choices made on our bar, for attacks; touching our
+mute button or volume slider ends enforcement and
+makes that choice the new saved state. Applying an
+unmuted saved state also removes the `muted` content
+attribute and clears `defaultMuted`. The saved state
+is respected exactly — a preference saved as muted
+still starts muted. After the grace window closes,
+later changes are no longer fought.
+
+A second fix rides in the same run, from evidence
+John brought minutes after the 0.0.21a pass: in
+Nubisianua, his Muse presence-card avatar carried
+a cropped strip of the Nubisianua bar — play button,
+gold seek thumb, a "0" time fragment. The avatar's
+animation on muse.ai is itself a looping `<video>`,
+and the 0.0.21a enhancer enhanced every video it
+found, indiscriminately; in the browser, with no
+enhancer, the same avatar is clean. Enhancement is
+now scoped to chat attachments only: a video is
+touched solely when it has a
+`[data-hatch-video-wrapper]` ancestor — the exact
+structure John's own DOM inspection proved for both
+the preview bubble and the opened "Media preview"
+player. Anything else is skipped entirely: no bar,
+no volume or resume meddling. The diagnostic badge
+stays — it witnesses the script, not the videos.
+
+The window title
+now reads exactly **Nubisianua -- Muse -- v0.0.22a**.
+Not field-proven yet: whether a chat video now starts
+with John's saved volume — and whether his avatar is
+clean again — is for his Windows test to say.
+
+v0.0.21a — **One script, a known target, and a badge.**
+John inspected the live Muse page himself (2026-11-08)
+and brought back the ground truth both video hunts needed:
+the chat video preview AND the opened player are plain
+`<video>` elements in the **main document** — a
+`blob:https://muse.ai/…` source inside a
+`data-hatch-video-wrapper="true"` div (preview: a 280px
+square bubble under
+`data-testid="hatch-chat-attachment-presentation-video"`,
+with a poster `<img>` overlay; opened: the same wrapper,
+relative and overflow-hidden at 16/9, inside a Radix
+"Media preview" dialog carrying Muse's own Pause /
+progress-slider / Unmute controls). **No shadow root, no
+iframe — that hypothesis is closed**; 0.0.20a's piercing
+scan stays, harmless, but it was never the fix. What was
+never proven was the plumbing: the link script executes
+in the Windows tab (field-proven in 0.0.17a) as the FIRST
+`initialization_script` call, while the player enhancer
+rode a SECOND call on an accumulate assumption nobody had
+field-verified. So this run makes **exactly one**
+initialization-script call per remote tab — link
+interceptor and player enhancer in a single body — aims
+the bar at the proven structure (a video inside a
+`[data-hatch-video-wrapper]` ancestor gets its bar
+appended to the wrapper itself, absolute along its bottom
+edge, where the wrapper's overflow-hidden cannot clip it
+away), and plants a temporary diagnostic badge in the
+page corner reading **NUB player active**, so John can
+see whether the script executed at all, separate from
+whether a bar attaches. The window title now reads
+exactly **Nubisianua -- Muse -- v0.0.21a**. Not
+field-proven yet: the badge is the deciding test John
+will run.
+
+v0.0.20a — **The scan pierces, and the title tells.**
+John's field verdict on 0.0.19a (built and installed on
+Windows, screenshot verified) was the same as on 0.0.18a:
+"still the original in app player" — no Nubisianua bar at
+all. Code inspection found the blind spot: the enhancer's
+scan searched only the main document
+(`querySelectorAll('video')`), so a chat `<video>` living
+inside a shadow root or a same-origin iframe was never
+seen. That scan is now a recursive walk: it descends into
+every open shadow root, into shadow roots captured by an
+`attachShadow` hook installed before the page's own
+scripts run (closed roots included), and into same-origin
+iframe documents (cross-origin frames are skipped
+silently), observes those roots for later mutations, and
+re-walks the tree every few seconds; a video found in a
+shadow root or an iframe logs exactly that under the
+`[nubisianua-player]` prefix. All 0.0.19a controls and
+behaviour are otherwise unchanged. And at John's
+direction the window title now reads exactly
+**Nubisianua -- Muse -- v0.0.20a**, so the running build
+is identifiable at a glance — no more guessing whether
+an old copy is the one on screen. Not field-proven yet:
+whether the bar now appears on a real chat video is for
+John's Windows test to say.
+
+v0.0.19a — **Our player, in the chat, by default.** John's
+field verdict on 0.0.18a: the Screening Room player sat in
+its tab, but a video posted in the chat never used it — chat
+videos still came up in the same old browser player: picture
+plays ~1 second (the cold-open frame) then freezes while the
+audio continues, starts muted, no fullscreen, and closed
+captions with no way to turn them off. So the tab player's
+controls now live **in the chat itself**: the enhancer script
+on remote tabs (no longer attached to the Screening Room tab
+at all) attaches Nubisianua's own control bar to each chat
+`<video>` in place — the video element itself untouched,
+never cloned, replaced, moved, or re-sourced. On the bar:
+**play/pause** (button, plus click-the-video toggles),
+a **seek bar with time display**, a **CC button** (captions
+off by default; the toggle sets the video's caption tracks
+showing/disabled, persists, and re-applies when caption
+tracks arrive late), a **speed selector** (0.5×–2×,
+persisted), **volume + mute** (not muted by default — the
+saved volume from the last video, or full volume unmuted on
+first run), and a **fullscreen button** (double-click works
+too) that fullscreens the player container. Resume position
+per video is kept from 0.0.18a. Built so it cannot freeze a
+picture the way the old enhancer risked: volume is applied
+once per source (never fought over on every `play`),
+position is restored at most once per source (no
+`durationchange` seeks), and no `seeked` listener feeds
+saves back into seeks. Diagnostics log as
+`[nubisianua-player]` in the page console. The Screening
+Room tab is unchanged and still serves local files.
+
+v0.0.18a — **Videos behave, right in the chat.** John's
+ask, in his words: "I wanted it to come up in the chat
+as if it was naturally supposed to be there and it's
+for when you submit a video to me." So the primary
+piece is an **in-page video enhancer** injected into
+every tab (same initialization-script architecture
+as the 0.0.13a link fix): when a video plays inside a
+chat page, it now (1) starts at the **volume John
+last used, unmuted** unless he muted it himself — a
+global preference kept in the page's localStorage,
+saved on every volume change and applied when a
+video loads or plays (first run: full volume,
+unmuted); (2) **remembers its position** per video
+(localStorage, keyed by a hash of the src with
+volatile query strings stripped), saved every few
+seconds and restored on load if it's a real middle —
+finished videos start fresh; and (3) goes
+**fullscreen** by double-click, plus a small ⛶
+button overlaid only where it can be anchored
+safely (forcing `controls` was rejected — Muse's
+player has its own UI, and doubling it helps no
+one). No IPC, nothing leaves the tab's own profile.
+The secondary piece is the **Screening Room**: a new
+preset tab opening a bundled local player page
+(`ui/player.html`) for video/audio files on disk —
+the files Albert makes, like Declaration of History
+episodes — with the same guarantees (position
+remembered and resumed, keyed by file name + size +
+last-modified; volume persisted; a proper fullscreen
+button), opened via the file picker or by dragging a
+file onto the page, played from a blob URL so no
+filesystem permissions are involved. Out of scope,
+deliberately: phone-orientation rotation is a Muse
+phone-app concern — a desktop window has no
+orientation to follow.
+
 v0.0.17a — **The software pulls the paste trigger.** The
 0.0.16a chain passed its field test end to end — drop,
 wl-copy, Ctrl+V, image attached — and John asked for the

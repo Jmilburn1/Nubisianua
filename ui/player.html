@@ -1,0 +1,352 @@
+<!doctype html>
+<!--
+  Nubisianua Screening Room (introduced v0.0.18a; unchanged in v0.0.19a) — the local video/audio player page.
+  Served as a bundled app page (WebviewUrl::App("player.html"), ui/ is the
+  frontendDist), opened by the "Screening Room" preset tab whose stored
+  URL is the app://player sentinel (see src/tabs.rs).
+  Built to fix John's charge sheet against Muse's built-in player:
+    1. It REMEMBERS POSITION and resumes — never resets to the beginning.
+    2. VOLUME PERSISTS where he left it — never starts muted/reset.
+    3. PROPER FULLSCREEN.
+  (Charge 4 — phone orientation rotation — is a Muse phone-app concern;
+  a desktop Tauri window has no orientation to follow. Out of scope here.)
+  Zero Tauri IPC: no invoke, no plugins, no asset protocol. A file picked
+  or dropped here is played from a blob: URL (URL.createObjectURL), which
+  needs no filesystem permission. Blob URLs die with the page, so resume
+  is keyed by file identity (name + size + lastModified) in localStorage:
+  re-open the same file and playback seeks back to where it stopped.
+  localStorage lives in this tab's per-tab webview profile directory
+  (src/config.rs profile_dir), which persists across restarts as long
+  as the tab itself persists in tabs.json.
+  Plain HTML/CSS/JS, no framework — same rule as ui/index.html.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Screening Room</title>
+<style>
+  :root {
+    --bg: #181819;          /* Muse window background, same as index.html */
+    --tab: #222223;
+    --tab-active: #2a2a2b;
+    --line: #333334;
+    --text: #e6e6e6;
+    --dim: #9a9a9e;
+    --accent: #f2f2f2;      /* v0.0.24a: app-neutral off-white, gold retired at John's direction */
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.45 system-ui, "Segoe UI", sans-serif;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ---- top bar ---- */
+  #bar {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-bottom: 1px solid var(--line);
+    background: var(--tab);
+  }
+  #bar .title { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  #bar button, #bar select {
+    height: 28px; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--tab-active); color: var(--text);
+    font: inherit; cursor: pointer; white-space: nowrap;
+  }
+  #bar button:hover { border-color: var(--accent); }
+  #filename {
+    flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: var(--dim);
+  }
+  #file { display: none; }
+
+  /* ---- stage ---- */
+  #stage {
+    position: relative; flex: 1; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #000;
+  }
+  #stage.dragover { outline: 3px dashed var(--accent); outline-offset: -10px; }
+  #stage:fullscreen { background: #000; }
+  #media { width: 100%; height: 100%; max-height: 100%; background: #000; }
+  /* Audio files have no picture: a quiet placeholder sits over the
+     (blank) video surface. Hidden as soon as a real video track shows. */
+  #audioart {
+    position: absolute; inset: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; background: var(--bg); color: var(--dim);
+    pointer-events: none; text-align: center; padding: 20px;
+  }
+  #audioart.show { display: flex; }
+  #audioart .note { font-size: 64px; color: var(--accent); line-height: 1; }
+  #audioart .aname { max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #empty {
+    position: absolute; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; color: var(--dim); text-align: center; padding: 24px;
+    pointer-events: none;
+  }
+  #empty.hide { display: none; }
+  #empty .big { font-size: 17px; color: var(--text); }
+
+  /* ---- status line ---- */
+  #status {
+    flex: none; min-height: 26px; padding: 4px 10px;
+    border-top: 1px solid var(--line); background: var(--tab);
+    color: var(--dim); white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #status b { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="bar">
+    <span class="title">Screening Room</span>
+    <button id="open" type="button">Open file…</button>
+    <input id="file" type="file"
+           accept="video/*,audio/*,.mp4,.webm,.mov,.mkv,.m4v,.mp3,.wav,.m4a,.ogg,.flac">
+    <span id="filename">No file open</span>
+    <select id="rate" title="Playback speed">
+      <option value="0.5">0.5×</option>
+      <option value="0.75">0.75×</option>
+      <option value="1" selected>1×</option>
+      <option value="1.25">1.25×</option>
+      <option value="1.5">1.5×</option>
+      <option value="2">2×</option>
+    </select>
+    <button id="restart" type="button" title="Back to the start (clears the saved position)">↺ Restart</button>
+    <button id="fs" type="button" title="Full screen">⛶ Fullscreen</button>
+  </div>
+
+  <div id="stage">
+    <video id="media" controls preload="metadata"></video>
+    <div id="audioart"><div class="note">♪</div><div class="aname"></div><div>Audio</div></div>
+    <div id="empty">
+      <div class="big">Open a video or audio file</div>
+      <div>Use <b>Open file…</b> above, or drag the file onto this page.</div>
+      <div>If you have played it before, it picks up where you left off —<br>
+           and the volume stays where you left it, too.</div>
+    </div>
+  </div>
+
+  <div id="status">Ready.</div>
+</div>
+
+<script>
+  'use strict';
+
+  var LS_POS = 'nubisianua.player.pos.';   // + fileKey -> seconds (string)
+  var LS_VOL = 'nubisianua.player.volume';
+  var LS_MUTED = 'nubisianua.player.muted';
+  var LS_RATE = 'nubisianua.player.rate';
+
+  var stage = document.getElementById('stage');
+  var media = document.getElementById('media');
+  var fileInput = document.getElementById('file');
+  var filenameEl = document.getElementById('filename');
+  var statusEl = document.getElementById('status');
+  var emptyEl = document.getElementById('empty');
+  var audioArt = document.getElementById('audioart');
+  var rateSel = document.getElementById('rate');
+
+  var currentKey = null;      // name|size|lastModified of the open file
+  var currentName = '';
+  var objectUrl = null;
+  var lastSavedAt = 0;        // ms timestamp of the last position save
+
+  function say(html) { statusEl.innerHTML = html; }
+
+  function fmt(t) {
+    if (!isFinite(t) || t < 0) t = 0;
+    t = Math.floor(t);
+    var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return h > 0 ? h + ':' + p(m) + ':' + p(s) : m + ':' + p(s);
+  }
+
+  function fileKey(f) { return f.name + '|' + f.size + '|' + f.lastModified; }
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode etc. */ } }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) { } }
+
+  /* ---- persisted settings: volume / mute / rate (charge 2) ----
+     Applied before any file exists, so the very first play already
+     uses them. First ever run: volume 1, NOT muted — the player
+     never imposes a mute of its own; it only restores John's. */
+  function applySavedSettings() {
+    var v = parseFloat(lsGet(LS_VOL));
+    if (isFinite(v) && v >= 0 && v <= 1) media.volume = v; else media.volume = 1;
+    media.muted = lsGet(LS_MUTED) === '1';
+    var r = parseFloat(lsGet(LS_RATE));
+    if (isFinite(r) && r > 0 && r <= 4) {
+      media.playbackRate = r;
+      rateSel.value = String(r);
+      if (rateSel.value === '') rateSel.value = '1';
+    }
+  }
+  applySavedSettings();
+
+  media.addEventListener('volumechange', function () {
+    lsSet(LS_VOL, String(media.volume));
+    lsSet(LS_MUTED, media.muted ? '1' : '0');
+  });
+  media.addEventListener('ratechange', function () {
+    lsSet(LS_RATE, String(media.playbackRate));
+  });
+  rateSel.addEventListener('change', function () {
+    media.playbackRate = parseFloat(rateSel.value) || 1;
+  });
+
+  /* ---- position save / resume (charge 1) ---- */
+  function savePosition() {
+    if (!currentKey) return;
+    if (!isFinite(media.duration) || media.duration <= 0) return;
+    if (media.ended) { lsDel(LS_POS + currentKey); return; }
+    var t = media.currentTime;
+    // Within the last 5 seconds counts as finished: start over next time.
+    if (t > 0 && media.duration - t <= 5) { lsDel(LS_POS + currentKey); return; }
+    if (t > 0) lsSet(LS_POS + currentKey, String(t));
+  }
+  media.addEventListener('timeupdate', function () {
+    var now = Date.now();
+    if (now - lastSavedAt >= 5000) { lastSavedAt = now; savePosition(); }
+  });
+  media.addEventListener('pause', savePosition);
+  media.addEventListener('seeked', savePosition);
+  media.addEventListener('ended', function () {
+    if (currentKey) lsDel(LS_POS + currentKey);
+    say('<b>Finished.</b> ' + currentName + ' — next open starts from the beginning.');
+  });
+  window.addEventListener('beforeunload', savePosition);
+  window.addEventListener('pagehide', savePosition);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') savePosition();
+  });
+
+  /* ---- opening files ---- */
+  var MEDIA_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'm4v', 'mp3', 'wav', 'm4a', 'ogg', 'flac'];
+  function looksPlayable(f) {
+    if (f.type && (f.type.indexOf('video/') === 0 || f.type.indexOf('audio/') === 0)) return true;
+    var dot = f.name.lastIndexOf('.');
+    return dot >= 0 && MEDIA_EXTS.indexOf(f.name.slice(dot + 1).toLowerCase()) >= 0;
+  }
+  function isAudioFile(f) {
+    if (f.type && f.type.indexOf('audio/') === 0) return true;
+    var dot = f.name.lastIndexOf('.');
+    var ext = dot >= 0 ? f.name.slice(dot + 1).toLowerCase() : '';
+    return ['mp3', 'wav', 'm4a', 'ogg', 'flac'].indexOf(ext) >= 0;
+  }
+
+  function openFile(f) {
+    if (!f) return;
+    if (!looksPlayable(f)) {
+      say('<b>Not a media file:</b> ' + f.name + ' — nothing opened.');
+      return;
+    }
+    savePosition(); // the outgoing file keeps its place before we switch
+    if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+
+    currentKey = fileKey(f);
+    currentName = f.name;
+    filenameEl.textContent = f.name;
+    emptyEl.classList.add('hide');
+    audioArt.querySelector('.aname').textContent = f.name;
+    audioArt.classList.toggle('show', isAudioFile(f));
+
+    objectUrl = URL.createObjectURL(f);
+    applySavedSettings();
+    media.src = objectUrl;
+    media.load();
+    say('Opened <b>' + f.name + '</b>');
+  }
+
+  fileInput.addEventListener('change', function () {
+    openFile(fileInput.files && fileInput.files[0]);
+    fileInput.value = ''; // same file can be picked again later
+  });
+  document.getElementById('open').addEventListener('click', function () {
+    fileInput.click();
+  });
+
+  /* Drag-and-drop onto the page. Local app page, so in-page
+     DataTransfer.files DOES carry real File objects here (the
+     0.0.14a starvation was remote pages on WebKitGTK; this page
+     is the app's own, and its webview's native handler is off —
+     see src/tabs.rs). */
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    stage.addEventListener(ev, function (e) {
+      e.preventDefault();
+      stage.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    stage.addEventListener(ev, function (e) {
+      e.preventDefault();
+      stage.classList.remove('dragover');
+    });
+  });
+  stage.addEventListener('drop', function (e) {
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) openFile(files[0]);
+  });
+  // Keep a stray drop outside the stage from navigating the page away.
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('drop', function (e) { e.preventDefault(); });
+
+  media.addEventListener('loadedmetadata', function () {
+    // A video file that turns out to have no picture still gets the art.
+    if (media.videoWidth > 0) audioArt.classList.remove('show');
+    else if (currentKey) audioArt.classList.add('show');
+
+    // Resume: only a real middle — more than 5s in, more than 5s
+    // from the end. Anything else starts at the beginning.
+    if (!currentKey) return;
+    var saved = parseFloat(lsGet(LS_POS + currentKey));
+    if (isFinite(saved) && saved > 5 && isFinite(media.duration) && saved < media.duration - 5) {
+      try {
+        media.currentTime = saved;
+        say('<b>Resumed at ' + fmt(saved) + '</b> of ' + fmt(media.duration) + ' — ' + currentName);
+        return;
+      } catch (e) { /* fall through to a clean start */ }
+    }
+    say('Playing <b>' + currentName + '</b> — ' + fmt(media.duration || 0));
+  });
+  media.addEventListener('error', function () {
+    if (!currentKey) return;
+    say('<b>Could not play that file.</b> ' + currentName +
+        ' — the format may not be supported by this system\u2019s webview.');
+  });
+
+  /* ---- buttons ---- */
+  document.getElementById('restart').addEventListener('click', function () {
+    if (!currentKey) return;
+    lsDel(LS_POS + currentKey);
+    media.currentTime = 0;
+    say('Back to the beginning — ' + currentName);
+  });
+
+  // Proper fullscreen (charge 3): fullscreen the whole stage
+  // (bar-less while fullscreen; the video's native controls stay),
+  // falling back to the video element itself where needed.
+  document.getElementById('fs').addEventListener('click', function () {
+    try {
+      if (document.fullscreenElement) { document.exitFullscreen(); return; }
+      var p = null;
+      if (stage.requestFullscreen) p = stage.requestFullscreen();
+      else if (media.requestFullscreen) p = media.requestFullscreen();
+      else if (media.webkitEnterFullscreen) { media.webkitEnterFullscreen(); return; }
+      if (p && p.catch) p.catch(function () { say('Fullscreen was refused by the system.'); });
+    } catch (e) {
+      say('Fullscreen is not available here.');
+    }
+  });
+  media.addEventListener('dblclick', function () {
+    document.getElementById('fs').click();
+  });
+</script>
+</body>
+</html>
