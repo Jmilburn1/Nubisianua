@@ -4,6 +4,8 @@ Nubisianua — Latin *nubis* (cloud) + *ianua* (doorway): the Cloud's Doorway.
 
 A lightweight Electron desktop wrapper that loads AI chat apps into tabs, each with its own isolated sign-in. Muse is the resident, front and center; every other AI is a guest.
 
+This is a complete rebuild from scratch. If you still have to Original Nubisianua, You should uninstall it and use this one instead.
+
 ## Tabs
 
 - **AI Assistants:** Muse, Meta AI, Claude, ChatGPT, Gemini, Copilot, Grok, Perplexity, Qwen, Kimi, Vibe, Poe, Pi, HuggingChat
