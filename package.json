@@ -1,0 +1,44 @@
+{
+  "name": "nubisianua",
+  "version": "0.1.0",
+  "description": "Desktop wrapper for muse.ai",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "keywords": [],
+  "author": "JMilburn",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "dev.farmerjay.nubisianua",
+    "productName": "Nubisianua",
+    "files": [
+      "index.js",
+      "tabs.js",
+      "preload.js",
+      "shell.html",
+      "shell-preload.js",
+      "settings-view.html",
+      "settings-view-preload.js",
+      "logos/**/*",
+      "icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "icon.ico",
+      "artifactName": "Nubisianua-${version}-win-x64.${ext}"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "icon.png",
+      "artifactName": "Nubisianua-${version}-linux-x86_64.${ext}"
+    }
+  }
+}

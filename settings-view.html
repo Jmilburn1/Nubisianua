@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Nubisianua Settings</title>
+<style>
+  /* ---------- SECTION: THEMES ---------- */
+  /* Clean dark menu look, like the Muse settings panel:
+     near-black card, hairline dividers, quiet buttons. */
+  :root {
+    --bg: #1e1e1e;
+    --surface: #2a2a2a;
+    --surface-2: #2a2a2a;
+    --selected: #3d3d3d;
+    --text: #f0f0f0;
+    --text-dim: #999;
+    --accent: #4a9eff;
+    --border: #2e2e2e;
+    --divider: #2a2a2a;
+    --danger: #e05252;
+    --success: #3fb950;
+    --scrollbar: #3d3d3d;
+    --scrollbar-hover: #4d4d4d;
+  }
+  [data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --surface-2: #f0f0f0;
+    --selected: #ffffff;
+    --text: #1a1a1a;
+    --text-dim: #777;
+    --accent: #2b7cd3;
+    --border: #e4e4e4;
+    --divider: #ececec;
+    --danger: #c0392b;
+    --success: #1e8e3e;
+    --scrollbar: #c8c8c8;
+    --scrollbar-hover: #a8a8a8;
+  }
+
+  /* ---------- SECTION: PAGE ---------- */
+  /* The view covers the whole window with a transparent
+     background — only the card is visible, and a click on the
+     transparent area around it closes the menu. */
+  body { margin: 0; background: transparent; color: var(--text); font-family: sans-serif; }
+  /* The card is a flex column: the list scrolls in its own
+     area, and Close is a permanent footer — it can never
+     be scrolled past or float mid-list again. */
+  .wrap {
+    position: fixed;
+    bottom: 12px;
+    right: 212px;
+    width: 460px;
+    max-height: calc(100vh - 24px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+  .wrap-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 20px 20px 16px;
+  }
+  h1 { font-size: 19px; font-weight: 600; margin: 0 0 4px; }
+  h2 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin: 20px 0 4px;
+    color: var(--text-dim);
+  }
+  p.sub { color: var(--text-dim); font-size: 13px; margin: 0 0 8px; }
+
+  /* ---------- SECTION: TAB ROWS ---------- */
+  /* Quiet rows with a hairline divider — no boxes. */
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 2px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .row:last-child { border-bottom: none; }
+  .row .tab-logo { width: 20px; height: 20px; margin-right: 10px; flex-shrink: 0; }
+  .row .tab-left { flex-grow: 1; min-width: 0; }
+  .row .name { font-size: 14px; }
+  .row .url { font-size: 11px; color: var(--text-dim); }
+  .row button {
+    flex-shrink: 0;
+    margin-left: 12px;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .row button:hover { border-color: var(--accent); color: #fff; }
+  .row button.add { padding: 1px 10px; font-size: 18px; line-height: 1.2; color: var(--success); }
+  .row button.add:hover { border-color: var(--success); color: var(--success); }
+  .row button.remove { padding: 1px 10px; font-size: 18px; line-height: 1.2; color: var(--danger); }
+  .row button.remove:hover { border-color: var(--danger); color: var(--danger); }
+
+  /* ---------- SECTION: CUSTOM AI FORM ---------- */
+  .form { margin-top: 4px; }
+  .form input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+  }
+  .form button {
+    padding: 9px 18px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  /* ---------- SECTION: SEGMENTED CHOICES ---------- */
+  /* One pill with the options inside; the selected one lights up. */
+  .choices {
+    display: flex;
+    gap: 0;
+    background: var(--surface-2);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .choices label {
+    flex: 1;
+    text-align: center;
+    padding: 8px 0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .choices input { display: none; }
+  .choices label.selected { background: var(--selected); color: var(--text); }
+
+  /* ---------- SECTION: THIN SCROLLBAR ---------- */
+  /* Thin and quiet, like Muse's own — no chunky track. */
+  .wrap-body { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
+  .wrap-body::-webkit-scrollbar { width: 8px; }
+  .wrap-body::-webkit-scrollbar-track { background: transparent; }
+  .wrap-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+  .wrap-body::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+
+  /* ---------- SECTION: CLOSE ---------- */
+  /* Permanent footer — never scrolls, never floats mid-list. */
+  .close-row {
+    flex-shrink: 0;
+    background: var(--bg);
+    border-top: 1px solid var(--divider);
+    padding: 12px 20px 16px;
+    text-align: right;
+  }
+  .close-row button {
+    padding: 7px 18px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .close-row button:hover { border-color: var(--text-dim); }
+</style>
+</head>
+<body data-theme="dark">
+<div class="wrap">
+  <div class="wrap-body">
+    <h1 id="panel-title">Settings</h1>
+    <p class="sub" id="panel-sub">Move the sidebar, pick a theme.</p>
+
+    <!-- ---------- SECTION: TABS PANEL (the + button) ---------- -->
+    <div id="panel-tabs">
+      <h2>Tabs</h2>
+      <div id="tab-list"></div>
+
+      <!-- ---------- SECTION: CUSTOM AI ---------- -->
+      <h2>Add your own AI</h2>
+      <div class="form">
+        <input id="custom-name" type="text" placeholder="Name — e.g. My AI">
+        <input id="custom-url" type="text" placeholder="URL — e.g. https://example.com">
+        <button id="custom-add">Add tab</button>
+      </div>
+    </div>
+
+    <!-- ---------- SECTION: SETTINGS PANEL (the gear button) ---------- -->
+    <div id="panel-settings">
+      <h2>Sidebar position</h2>
+      <div class="choices" id="position-choices">
+        <label data-pos="left"><input type="radio" name="pos"> Left</label>
+        <label data-pos="right"><input type="radio" name="pos"> Right</label>
+        <label data-pos="top"><input type="radio" name="pos"> Top</label>
+      </div>
+
+      <h2>Theme</h2>
+      <div class="choices" id="theme-choices">
+        <label data-theme="dark"><input type="radio" name="theme"> Dark</label>
+        <label data-theme="light"><input type="radio" name="theme"> Light</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="close-row">
+    <button id="close-btn">Close</button>
+  </div>
+</div>
+
+<script>
+  // ---------- SECTION: RENDER ----------
+  // The category order shown in Settings.
+  const CATEGORY_ORDER = ['assistants', 'companions', 'media', 'custom'];
+
+  function render(data) {
+    document.body.setAttribute('data-theme', data.theme || 'dark');
+
+    // Show one panel at a time: the + button gets the tab list,
+    // the gear gets themes and sidebar position.
+    const isTabs = data.panel === 'tabs';
+    document.getElementById('panel-title').textContent = isTabs ? 'Add tabs' : 'Settings';
+    document.getElementById('panel-sub').textContent = isTabs
+      ? 'Add or remove tabs, or add your own AI.'
+      : 'Move the sidebar, pick a theme.';
+    document.getElementById('panel-tabs').style.display = isTabs ? '' : 'none';
+    document.getElementById('panel-settings').style.display = isTabs ? 'none' : '';
+
+    // Place the card next to the sidebar, anchored to the
+    // gear button at the bottom — it stays with the button
+    // instead of floating up by the top tab.
+    const wrap = document.querySelector('.wrap');
+    const sidebarWidth = data.sidebarWidth || 200;
+    if (data.sidebarPosition === 'left') {
+      wrap.style.left = (sidebarWidth + 12) + 'px';
+      wrap.style.right = 'auto';
+      wrap.style.top = 'auto';
+      wrap.style.bottom = '12px';
+    } else if (data.sidebarPosition === 'top') {
+      wrap.style.top = '52px';
+      wrap.style.bottom = 'auto';
+      wrap.style.right = '12px';
+      wrap.style.left = 'auto';
+    } else {
+      wrap.style.right = (sidebarWidth + 12) + 'px';
+      wrap.style.left = 'auto';
+      wrap.style.top = 'auto';
+      wrap.style.bottom = '12px';
+    }
+
+    // Sidebar position + theme radio states
+    document.querySelectorAll('#position-choices label').forEach((l) => {
+      l.classList.toggle('selected', l.dataset.pos === data.sidebarPosition);
+    });
+    document.querySelectorAll('#theme-choices label').forEach((l) => {
+      l.classList.toggle('selected', l.dataset.theme === data.theme);
+    });
+
+    // Tab list, grouped by category
+    const list = document.getElementById('tab-list');
+    list.innerHTML = '';
+    CATEGORY_ORDER.forEach((cat) => {
+      const items = data.tabs.filter((t) => t.category === cat);
+      if (!items.length) return;
+      const h = document.createElement('h2');
+      h.textContent = data.categories[cat] || cat;
+      h.style.marginTop = '16px';
+      list.appendChild(h);
+      items.forEach((t) => {
+        const row = document.createElement('div');
+        row.className = 'row';
+        if (!t.custom) {
+          const img = document.createElement('img');
+          img.src = `logos/${t.id}.png`;
+          img.className = 'tab-logo';
+          row.appendChild(img);
+        }
+        const left = document.createElement('div');
+        left.className = 'tab-left';
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = t.name;
+        left.appendChild(name);
+        const url = document.createElement('div');
+        url.className = 'url';
+        url.textContent = t.url;
+        left.appendChild(url);
+        row.appendChild(left);
+        const btn = document.createElement('button');
+        if (t.open) {
+          btn.textContent = '−';
+          btn.className = 'remove';
+          btn.title = 'Remove tab';
+          btn.onclick = () => {
+            if (t.custom) window.electronAPI.removeCustomTab(t.id);
+            else window.electronAPI.removeTab(t.id);
+          };
+        } else {
+          btn.textContent = '+';
+          btn.className = 'add';
+          btn.title = 'Add tab';
+          btn.onclick = () => window.electronAPI.addTab(t.id);
+        }
+        row.appendChild(btn);
+        list.appendChild(row);
+      });
+    });
+  }
+
+  // ---------- SECTION: LOAD + LIVE UPDATES ----------
+  window.electronAPI.getSettings().then(render);
+  window.electronAPI.onSettingsUpdated(render);
+
+  // ---------- SECTION: CUSTOM AI FORM ----------
+  document.getElementById('custom-add').addEventListener('click', () => {
+    const name = document.getElementById('custom-name').value;
+    const url = document.getElementById('custom-url').value;
+    if (!url.trim()) return;
+    window.electronAPI.addCustomTab(name, url);
+    document.getElementById('custom-name').value = '';
+    document.getElementById('custom-url').value = '';
+  });
+
+  // ---------- SECTION: POSITION + THEME ----------
+  document.querySelectorAll('#position-choices label').forEach((l) => {
+    l.addEventListener('click', () => window.electronAPI.setSidebarPosition(l.dataset.pos));
+  });
+  document.querySelectorAll('#theme-choices label').forEach((l) => {
+    l.addEventListener('click', () => window.electronAPI.setTheme(l.dataset.theme));
+  });
+
+  // ---------- SECTION: CLOSE ----------
+  document.getElementById('close-btn').addEventListener('click', () => {
+    window.electronAPI.close();
+  });
+
+  // Clicking anywhere outside the card closes the menu.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.wrap')) window.electronAPI.close();
+  });
+
+  // Escape closes the menu too.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.electronAPI.close();
+  });
+</script>
+</body>
+</html>

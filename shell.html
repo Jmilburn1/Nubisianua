@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  /* ---------- SECTION: THEMES ---------- */
+  :root {
+    --bar-bg: #222;
+    --bar-hover: #333;
+    --bar-active: #333;
+    --text: #ccc;
+    --text-active: #fff;
+    --text-dim: #999;
+    --accent: #4a9eff;
+    --page-bg: #1a1a1a;
+  }
+  [data-theme="light"] {
+    --bar-bg: #e8e8e8;
+    --bar-hover: #d4d4d4;
+    --bar-active: #d4d4d4;
+    --text: #333;
+    --text-active: #000;
+    --text-dim: #777;
+    --accent: #2b7cd3;
+    --page-bg: #f0f0f0;
+  }
+
+  /* ---------- SECTION: PAGE ---------- */
+  body { margin: 0; background: var(--page-bg); font-family: sans-serif; }
+
+  /* ---------- SECTION: TAB BAR ---------- */
+  .tab-bar {
+    display: flex;
+    flex-direction: column;
+    width: 200px;
+    height: 100vh;
+    background: var(--bar-bg);
+    position: fixed;
+    top: 0;
+  }
+  .tab-bar.right { right: 0; }
+  .tab-bar.left { left: 0; }
+  .tab-bar.top {
+    flex-direction: row;
+    width: 100vw;
+    height: 40px;
+    left: 0;
+    right: 0;
+    overflow-x: auto;
+  }
+
+  /* ---------- SECTION: TAB BUTTONS ---------- */
+  .tab {
+    padding: 12px 20px;
+    line-height: normal;
+    color: var(--text);
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-size: 14px;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .tab:hover { background: var(--bar-hover); color: var(--text-active); }
+  .tab.active { background: var(--bar-active); color: var(--text-active); border-bottom: 2px solid var(--accent); }
+  .tab-bar.top .tab { padding: 0 14px; height: 40px; border-bottom: none; }
+  .tab-bar.top .tab.active { border-bottom: 2px solid var(--accent); }
+
+  /* ---------- SECTION: TAB LOGOS ---------- */
+  .tab-logo {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+    margin-right: 8px;
+    flex-shrink: 0;
+  }
+  .tab-bar.collapsed .tab-text { display: none; }
+  .tab-bar.collapsed .tab { text-align: center; padding: 12px 0; justify-content: center; }
+  .tab-bar.collapsed .tab-logo { margin-right: 0; }
+
+  /* ---------- SECTION: CLOSE BUTTON (shows on hover) ---------- */
+  .tab-close {
+    display: none;
+    margin-left: auto;
+    padding: 0 4px;
+    color: var(--text-dim);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .tab:hover .tab-close { display: inline; }
+  .tab-close:hover { color: var(--text-active); }
+  .tab-bar.collapsed .tab-close { display: none; }
+  .tab-bar.top .tab-close { display: none; }
+  .tab-bar.top .tab:hover .tab-close { display: inline; }
+
+  /* ---------- SECTION: ADD + SETTINGS BUTTONS ---------- */
+  .bar-spacer { flex-grow: 1; }
+  .bar-btn {
+    padding: 12px 20px;
+    color: var(--text-dim);
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-size: 18px;
+    text-align: left;
+    flex-shrink: 0;
+  }
+  .bar-btn:hover { background: var(--bar-hover); color: var(--text-active); }
+  .tab-bar.top .bar-btn { padding: 0 12px; height: 40px; }
+
+  /* ---------- SECTION: RESIZE HANDLE ---------- */
+  #resize-handle {
+    position: absolute;
+    top: 0;
+    width: 4px;
+    height: 100%;
+    cursor: ew-resize;
+  }
+  .tab-bar.right #resize-handle { left: 0; }
+  .tab-bar.left #resize-handle { right: 0; }
+  .tab-bar.top #resize-handle { display: none; }
+  #resize-handle:hover { background: var(--accent); }
+</style>
+</head>
+<body data-theme="dark">
+<!-- ---------- SECTION: TAB BAR ---------- -->
+<div class="tab-bar right" id="tab-bar">
+  <div id="resize-handle"></div>
+	<button class="tab active" data-tab="muse"><img src="logos/muse.png" class="tab-logo"><span class="tab-text">Muse</span><span class="tab-close" data-close="muse">&times;</span></button>
+	<button class="tab" data-tab="meta"><img src="logos/meta.png" class="tab-logo"><span class="tab-text">Meta AI</span><span class="tab-close" data-close="meta">&times;</span></button>
+	<button class="tab" data-tab="deepseek"><img src="logos/deepseek.png" class="tab-logo"><span class="tab-text">DeepSeek</span><span class="tab-close" data-close="deepseek">&times;</span></button>
+	<button class="tab" data-tab="claude"><img src="logos/claude.png" class="tab-logo"><span class="tab-text">Claude</span><span class="tab-close" data-close="claude">&times;</span></button>
+	<button class="tab" data-tab="chatgpt"><img src="logos/chatgpt.png" class="tab-logo"><span class="tab-text">ChatGPT</span><span class="tab-close" data-close="chatgpt">&times;</span></button>
+	<button class="tab" data-tab="gemini"><img src="logos/gemini.png" class="tab-logo"><span class="tab-text">Gemini</span><span class="tab-close" data-close="gemini">&times;</span></button>
+	<button class="tab" data-tab="copilot"><img src="logos/copilot.png" class="tab-logo"><span class="tab-text">Copilot</span><span class="tab-close" data-close="copilot">&times;</span></button>
+	<button class="tab" data-tab="grok"><img src="logos/grok.png" class="tab-logo"><span class="tab-text">Grok</span><span class="tab-close" data-close="grok">&times;</span></button>
+	<button class="tab" data-tab="perplexity"><img src="logos/perplexity.png" class="tab-logo"><span class="tab-text">Perplexity</span><span class="tab-close" data-close="perplexity">&times;</span></button>
+	<button class="tab" data-tab="qwen"><img src="logos/qwen.png" class="tab-logo"><span class="tab-text">Qwen</span><span class="tab-close" data-close="qwen">&times;</span></button>
+	<button class="tab" data-tab="kimi"><img src="logos/kimi.png" class="tab-logo"><span class="tab-text">Kimi</span><span class="tab-close" data-close="kimi">&times;</span></button>
+	<button class="tab" data-tab="lechat"><img src="logos/lechat.png" class="tab-logo"><span class="tab-text">Vibe</span><span class="tab-close" data-close="lechat">&times;</span></button>
+	<button class="tab" data-tab="poe"><img src="logos/poe.png" class="tab-logo"><span class="tab-text">Poe</span><span class="tab-close" data-close="poe">&times;</span></button>
+	<button class="tab" data-tab="pi"><img src="logos/pi.png" class="tab-logo"><span class="tab-text">Pi</span><span class="tab-close" data-close="pi">&times;</span></button>
+	<button class="tab" data-tab="huggingchat"><img src="logos/huggingchat.png" class="tab-logo"><span class="tab-text">HuggingChat</span><span class="tab-close" data-close="huggingchat">&times;</span></button>
+	<button class="tab" data-tab="vidy"><img src="logos/vidy.png" class="tab-logo"><span class="tab-text">Vidy</span><span class="tab-close" data-close="vidy">&times;</span></button>
+	<button class="tab" data-tab="kindroid"><img src="logos/kindroid.png" class="tab-logo"><span class="tab-text">Kindroid</span><span class="tab-close" data-close="kindroid">&times;</span></button>
+	<button class="tab" data-tab="nomi"><img src="logos/nomi.png" class="tab-logo"><span class="tab-text">Nomi</span><span class="tab-close" data-close="nomi">&times;</span></button>
+	<button class="tab" data-tab="flixai"><img src="logos/flixai.png" class="tab-logo"><span class="tab-text">FlixAI</span><span class="tab-close" data-close="flixai">&times;</span></button>
+  <div class="bar-spacer"></div>
+  <button class="bar-btn" id="add-tab-btn" title="Add a tab">+</button>
+  <button class="bar-btn" id="settings-btn" title="Settings">&#9881;</button>
+  </div>
+
+<script>
+  // ---------- SECTION: APPLY SETTINGS (theme + position) ----------
+  window.electronAPI.onApplySettings(({ theme, sidebarPosition }) => {
+    document.body.setAttribute('data-theme', theme || 'dark');
+    const bar = document.getElementById('tab-bar');
+    bar.classList.remove('right', 'left', 'top');
+    bar.classList.add(sidebarPosition || 'right');
+  });
+
+  // ---------- SECTION: HIDE CLOSED TABS ----------
+  // On startup, ask the main process which tabs are still open
+  // and remove the buttons for the ones that were closed.
+  window.electronAPI.getOpenTabs().then((open) => {
+    document.querySelectorAll('.tab').forEach((btn) => {
+      if (!open.includes(btn.dataset.tab)) btn.remove();
+    });
+    // If the active tab was closed, mark the first open one active.
+    if (!document.querySelector('.tab.active')) {
+      const first = document.querySelector('.tab');
+      if (first) first.classList.add('active');
+    }
+  });
+
+  // ---------- SECTION: TAB ADDED (from Settings) ----------
+  // A tab was opened from Settings — add its button to the bar.
+  window.electronAPI.onTabOpened(({ id, name, logo }) => {
+    if (document.querySelector(`.tab[data-tab="${id}"]`)) return;
+    const btn = document.createElement('button');
+    btn.className = 'tab';
+    btn.dataset.tab = id;
+    const img = logo ? `<img src="logos/${id}.png" class="tab-logo">` : '';
+    btn.innerHTML = `${img}<span class="tab-text">${name}</span><span class="tab-close" data-close="${id}">&times;</span>`;
+    wireTabButton(btn);
+    const spacer = document.querySelector('.bar-spacer');
+    spacer.parentNode.insertBefore(btn, spacer);
+  });
+
+  // ---------- SECTION: TAB CLOSED (from Settings or here) ----------
+  window.electronAPI.onTabClosed((id) => {
+    const btn = document.querySelector(`.tab[data-tab="${id}"]`);
+    if (btn) btn.remove();
+  });
+
+  // ---------- SECTION: TAB CLICKS ----------
+  function wireTabButton(btn) {
+    btn.addEventListener('click', (e) => {
+      // Clicking the × closes the tab instead of switching to it
+      if (e.target.classList.contains('tab-close')) return;
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      window.electronAPI.switchTab(btn.dataset.tab);
+    });
+    // Middle-click closes the tab
+    btn.addEventListener('auxclick', (e) => {
+      if (e.button === 1) {
+        e.preventDefault();
+        const id = btn.dataset.tab;
+        window.electronAPI.closeTab(id);
+        btn.remove();
+      }
+    });
+    // Hover × closes the tab
+    const x = btn.querySelector('.tab-close');
+    if (x) {
+      x.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = x.dataset.close;
+        window.electronAPI.closeTab(id);
+        btn.remove();
+      });
+    }
+  }
+  document.querySelectorAll('.tab').forEach(wireTabButton);
+
+  // ---------- SECTION: ADD + SETTINGS BUTTONS ----------
+  // Settings floats above the tabs as its own view. The gear
+  // opens Settings (themes, sidebar position); the + opens the
+  // tab list (add/remove AIs). Each button toggles its own panel.
+  document.getElementById('add-tab-btn').addEventListener('click', () => {
+    window.electronAPI.toggleSettings('tabs');
+  });
+  document.getElementById('settings-btn').addEventListener('click', () => {
+    window.electronAPI.toggleSettings('settings');
+  });
+
+  // ---------- SECTION: RESIZE DRAG ----------
+  const handle = document.getElementById('resize-handle');
+  handle.addEventListener('mousedown', () => {
+    const bar = document.getElementById('tab-bar');
+    const onMove = (e) => {
+      let newWidth;
+      if (bar.classList.contains('left')) {
+        newWidth = e.clientX;
+      } else {
+        newWidth = window.innerWidth - e.clientX;
+      }
+      const clamped = Math.max(52, Math.min(248, newWidth));
+      bar.style.width = clamped + 'px';
+      window.electronAPI.setSidebarWidth(clamped);
+	  bar.classList.toggle('collapsed', clamped < 140);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+</script>
+</body>
+</html>
